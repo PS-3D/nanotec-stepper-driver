@@ -10,12 +10,12 @@ mod map;
 #[cfg(test)]
 mod tests;
 
+use map as cm;
 use nom::{self, error::FromExternalError, IResult, Parser};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt::{Debug, Display};
 use thiserror::Error;
-use map as cm;
 
 /// Gets thrown when there is an error while parsing the various enums which
 /// represent values for the commands
@@ -335,4 +335,3 @@ pub struct Response {
     address: Option<u8>,
     payload: Payload,
 }
-
