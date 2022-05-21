@@ -1,3 +1,11 @@
+//! Provides bindings for the raw commands of the stepper drivers.
+//!
+//! You usually don't have to talk to the motor directly, there is almost certainly
+//! a better way.\
+//! It might also be important to note that error checks on values aren't performed
+//! in this module. If you send a value that isn't allowed, you will get an error
+//! by the driver.
+
 use nom::{self, error::FromExternalError, IResult, Parser};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -5,11 +13,14 @@ use std::fmt::{Debug, Display};
 use thiserror::Error;
 
 mod cmd_map {
+    //! Provides Bindings for the individual commands
+
     macro_rules! makepl {
         ($($name:ident, $val:literal),*) => {
             $(pub const $name: &str = $val;)*
         };
     }
+
     #[rustfmt::skip]
     makepl!(
         READ, "Z",
@@ -37,8 +48,12 @@ mod cmd_map {
 
 use cmd_map as cm;
 
+/// Gets thrown when there is an error while parsing the various enums which
+/// represent values for the commands
 #[derive(Error, Debug)]
 pub enum ParseError {
+    /// Gets thrown when a a value of a command doesn't have a matching enum variant,
+    /// which usually means it's too big.
     #[error("Invalid Value while Parsing, probably too big")]
     InvalidValue,
 }
@@ -72,6 +87,7 @@ where
     ))
 }
 
+/// Binding for values of [1.5.1 Setting the motor type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A45%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C699%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorType {
     Stepper,
@@ -91,6 +107,7 @@ impl Display for MotorType {
     }
 }
 
+/// Binding for values of [1.6.2 Stopping a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A120%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C506%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorStop {
     QuickStop,
@@ -109,6 +126,7 @@ impl Display for MotorStop {
     }
 }
 
+/// Binding for values of [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RespondMode {
     Quiet,
@@ -127,6 +145,7 @@ impl Display for RespondMode {
     }
 }
 
+/// Binding for values of [1.6.6 Setting the positioning mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A128%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C738%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum PositioningMode {
     Relative = 1,
@@ -162,6 +181,7 @@ impl Display for PositioningMode {
     }
 }
 
+/// Binding for values of [1.6.15 Setting the direction of rotation](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A143%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RotationDirection {
     Left,
@@ -180,12 +200,30 @@ impl Display for RotationDirection {
     }
 }
 
+/// The payload-part of a command
+///
+/// Meaning everything but the `"#"`, and the address at the beginning and the
+/// `"\r"` at the end, e.g. `"u133742"` or `"A"`.
+///
+/// Error checks on values are not performed, menaing if you send an invalid value
+/// to the driver, you get an error back.
+///
+/// If a value of a command can also be read, it is wrapped into an [Option].
+/// [None] means that the corresponding command will be a read-command,
+/// [Some] means it will be a write-command. If parsing from text to rust, it
+/// won't matter if it was a response to a read- or write-command, both will be
+/// turned into [Some].
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Payload {
     //MotorType(Option<MotorType>),
     StartMotor,
     StopMotor(MotorStop),
     LoadRecord(u8),
+    /// This Command doesn't exist in the Firmware. This is due to
+    /// [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+    /// being such a weird command. Here it is seperated into two commands, [`SetRespondMode`][Payload::SetRespondMode]
+    /// and `ReadCurrentRecord`, which doesn't exist yet. This command corresponds
+    /// to `'|'` with just `0` or `1`, while ReadCurrentRecord does the reading of records part.
     SetRespondMode(RespondMode),
     //ReadCurrentRecord,
     SaveRecord(u8),
@@ -206,6 +244,12 @@ pub enum Payload {
 }
 
 impl Payload {
+    /// Parse a `&str` to payload.\
+    /// Also see [nom]
+    ///
+    /// Responses to read-commands and responses to write-commands are not differentiated.
+    /// This means that `"Zs1337"` and `"s1337"` would both be converted to
+    /// `Payload::TravelDistance(Some(1337))`
     #[rustfmt::skip]
     pub fn parse(s: &str) -> IResult<&str, Self> {
         use Payload::*;
@@ -227,6 +271,9 @@ impl Payload {
             };
         }
 
+        // There is no (semi-)easy way to make this less ugly, i've tried
+        // Watch out: If you forget a Command here, you might only notice once
+        // it doesn't work in the wild
         alt((
             tag(cm::START_MOTOR).map(|_| StartMotor),
             preceded(tag(cm::STOP_MOTOR), MotorStop::parse).map(|mt| StopMotor(mt)),
@@ -254,6 +301,7 @@ impl Payload {
 
 impl Display for Payload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Provide read-command if argument is None, else write command
         macro_rules! mkcmd {
             ($letter:expr, $arg:expr) => {
                 match $arg {
