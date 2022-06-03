@@ -14,7 +14,7 @@ use map as cm;
 use nom::{self, error::FromExternalError, IResult, Parser};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::{fmt::{Debug, Display}, str};
+use std::fmt::{Debug, Display};
 use thiserror::Error;
 
 /// Gets thrown when there is an error while parsing the various enums which
@@ -334,20 +334,18 @@ impl Display for Cmd {
 // Not final probably
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Response {
-    pub address: Option<u8>,
+    pub address: u8,
     pub payload: Payload,
 }
 
 impl Response {
     pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        use nom::{branch::alt, bytes::complete::tag, character::complete::u8, sequence::tuple};
-        tuple((
-            alt((tag("*").map(|_| None), u8.map(Option::from))),
-            Payload::parse,
-        ))
-        .map(|(a, p)| Self {
-            address: a,
-            payload: p,
-        }).parse(s)
+        use nom::{character::complete::u8, sequence::tuple};
+        tuple((u8, Payload::parse))
+            .map(|(a, p)| Self {
+                address: a,
+                payload: p,
+            })
+            .parse(s)
     }
 }
