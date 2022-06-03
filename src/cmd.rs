@@ -14,7 +14,7 @@ use map as cm;
 use nom::{self, error::FromExternalError, IResult, Parser};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::fmt::{Debug, Display};
+use std::{fmt::{Debug, Display}, str};
 use thiserror::Error;
 
 /// Gets thrown when there is an error while parsing the various enums which
@@ -41,12 +41,12 @@ impl ParseError {
 
 #[inline]
 fn parse_enum_value<'a, P, C, O, O2>(
-    s: &'a str,
+    s: &'a [u8],
     parser: P,
     constructor: C,
-) -> IResult<&'a str, O2, nom::error::Error<&'a str>>
+) -> IResult<&'a [u8], O2, nom::error::Error<&'a [u8]>>
 where
-    P: Fn(&'a str) -> IResult<&'a str, O, nom::error::Error<&'a str>>,
+    P: Fn(&'a [u8]) -> IResult<&'a [u8], O, nom::error::Error<&'a [u8]>>,
     C: Fn(O) -> Option<O2>,
 {
     let (rem, res) = parser(s)?;
@@ -65,7 +65,7 @@ pub enum MotorType {
 }
 
 impl MotorType {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         parse_enum_value(s, nom::character::complete::u8, MotorType::from_u8)
     }
 }
@@ -84,7 +84,7 @@ pub enum MotorStop {
 }
 
 impl MotorStop {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         parse_enum_value(s, nom::character::complete::u8, MotorStop::from_u8)
     }
 }
@@ -103,7 +103,7 @@ pub enum RespondMode {
 }
 
 impl RespondMode {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         parse_enum_value(s, nom::character::complete::u8, RespondMode::from_u8)
     }
 }
@@ -139,7 +139,7 @@ pub enum PositioningMode {
 }
 
 impl PositioningMode {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         parse_enum_value(s, nom::character::complete::u8, PositioningMode::from_u8)
     }
 }
@@ -158,7 +158,7 @@ pub enum RotationDirection {
 }
 
 impl RotationDirection {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         parse_enum_value(s, nom::character::complete::u8, RotationDirection::from_u8)
     }
 }
@@ -220,16 +220,16 @@ impl Payload {
     /// This means that `"Zs1337"` and `"s1337"` would both be converted to
     /// `Payload::TravelDistance(Some(1337))`
     #[rustfmt::skip]
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         use Payload::*;
-        use nom::{branch::alt, bytes::complete::tag, sequence::{tuple, preceded}, combinator::opt, character::complete::{u8, u16, u32, i32}};
+        use nom::{branch::alt, bytes::complete::tag, sequence::preceded, combinator::opt, character::complete::{u8, u16, u32, i32}};
 
 
         #[inline]
-        fn opt_read<'a, P, O, E>(p: P) -> impl Parser<&'a str, O, E>
+        fn opt_read<'a, P, O, E>(p: P) -> impl Parser<&'a [u8], O, E>
         where
-            P: Parser<&'a str, O, E>,
-            E: nom::error::ParseError<&'a str>,
+            P: Parser<&'a [u8], O, E>,
+            E: nom::error::ParseError<&'a [u8]>,
         {
             preceded(opt(tag(cm::READ)), p)
         }
@@ -339,7 +339,7 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn parse(s: &str) -> IResult<&str, Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         use nom::{branch::alt, bytes::complete::tag, character::complete::u8, sequence::tuple};
         tuple((
             alt((tag("*").map(|_| None), u8.map(Option::from))),
