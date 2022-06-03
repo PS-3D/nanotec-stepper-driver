@@ -314,10 +314,11 @@ impl Display for Payload {
     }
 }
 
+// Not final probably
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Cmd {
-    address: Option<u8>,
-    payload: Payload,
+    pub address: Option<u8>,
+    pub payload: Payload,
 }
 
 impl Display for Cmd {
@@ -330,8 +331,23 @@ impl Display for Cmd {
     }
 }
 
+// Not final probably
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct Response {
-    address: Option<u8>,
-    payload: Payload,
+    pub address: Option<u8>,
+    pub payload: Payload,
+}
+
+impl Response {
+    pub fn parse(s: &str) -> IResult<&str, Self> {
+        use nom::{branch::alt, bytes::complete::tag, character::complete::u8, sequence::tuple};
+        tuple((
+            alt((tag("*").map(|_| None), u8.map(Option::from))),
+            Payload::parse,
+        ))
+        .map(|(a, p)| Self {
+            address: a,
+            payload: p,
+        }).parse(s)
+    }
 }
