@@ -9,7 +9,12 @@
 #[cfg(test)]
 mod tests;
 
-use nom::{self, error::FromExternalError, IResult, Parser};
+use nom::{
+    self,
+    character::complete::{i32 as parse_i32, u16 as parse_u16, u32 as parse_u32, u8 as parse_u8},
+    error::FromExternalError,
+    IResult, Parser,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt::{Debug, Display};
@@ -64,7 +69,7 @@ pub enum MotorType {
 
 impl MotorType {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        parse_enum_value(s, nom::character::complete::u8, MotorType::from_u8)
+        parse_enum_value(s, parse_u8, MotorType::from_u8)
     }
 }
 
@@ -96,7 +101,7 @@ pub enum RespondMode {
 
 impl RespondMode {
     pub(super) fn parse<'b>(s: &'b [u8]) -> IResult<&'b [u8], Self> {
-        parse_enum_value(s, nom::character::complete::u8, RespondMode::from_u8)
+        parse_enum_value(s, parse_u8, RespondMode::from_u8)
     }
 }
 
@@ -132,7 +137,7 @@ pub enum PositioningMode {
 
 impl PositioningMode {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        parse_enum_value(s, nom::character::complete::u8, PositioningMode::from_u8)
+        parse_enum_value(s, parse_u8, PositioningMode::from_u8)
     }
 }
 
@@ -151,13 +156,79 @@ pub enum RotationDirection {
 
 impl RotationDirection {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        parse_enum_value(s, nom::character::complete::u8, RotationDirection::from_u8)
+        parse_enum_value(s, parse_u8, RotationDirection::from_u8)
     }
 }
 
 impl Display for RotationDirection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct Record {
+    pub positioning_mode: PositioningMode,
+    pub travel_distance: i32,
+    pub min_frequency: u32,
+    pub max_frequency: u32,
+    pub max_frequency2: u32,
+    pub accel_ramp: u16,
+    pub brake_ramp: u16,
+    pub rotation_direction: RotationDirection,
+    pub rotation_direction_change: bool,
+    pub repetitions: u32,
+    pub record_pause: u16,
+    pub continuation_record: u8,
+}
+
+impl Record {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        use nom::sequence::tuple;
+        tuple((
+            PositioningMode::parse,
+            parse_i32,
+            parse_u32,
+            parse_u32,
+            parse_u32,
+            parse_u16,
+            parse_u16,
+            RotationDirection::parse,
+            parse_u8.map(|n| n == 1),
+            parse_u32,
+            parse_u16,
+            parse_u8,
+        ))
+        .map(
+            |(
+                positioning_mode,
+                travel_distance,
+                min_frequency,
+                max_frequency,
+                max_frequency2,
+                accel_ramp,
+                brake_ramp,
+                rotation_direction,
+                rotation_direction_change,
+                repetitions,
+                record_pause,
+                continuation_record,
+            )| Self {
+                positioning_mode,
+                travel_distance,
+                min_frequency,
+                max_frequency,
+                max_frequency2,
+                accel_ramp,
+                brake_ramp,
+                rotation_direction,
+                rotation_direction_change,
+                repetitions,
+                record_pause,
+                continuation_record,
+            },
+        )
+        .parse(s)
     }
 }
 

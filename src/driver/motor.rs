@@ -1,13 +1,15 @@
 mod map;
 
 use super::{
-    cmd::{MotorStop, PositioningMode, RespondMode, RotationDirection},
+    cmd::{MotorStop, PositioningMode, Record, RespondMode, RotationDirection},
     responsehandle::{ReadResponseHandle, ResponseHandle, WriteResponseHandle},
     DriverError, InnerDriver,
 };
 use crate::util::ensure;
 use nom::{
+    bytes::complete::tag,
     character::complete::{i32 as parse_i32, u16 as parse_u16, u32 as parse_u32, u8 as parse_u8},
+    sequence::{preceded, tuple},
     Finish, Parser,
 };
 use std::{
@@ -131,7 +133,28 @@ impl<I: Write + Read> Motor<I> {
         short_read!(self, map::READ_CURRENT_RECORD, RespondMode::parse)
     }
 
-    // TODO get current record and get record
+    pub fn get_current_record(&mut self) -> Result<impl ResponseHandle<Record>, DriverError> {
+        read!(
+            self,
+            preceded(
+                tuple((tag(map::READ), tag(map::READ_CURRENT_RECORD))),
+                Record::parse
+            ),
+            format_args!("{}{}", map::READ, map::READ_CURRENT_RECORD)
+        )
+    }
+
+    pub fn get_record(&mut self, n: u8) -> Result<impl ResponseHandle<Record>, DriverError> {
+        ensure!(n <= 32, DriverError::InvalidArgument);
+        read!(
+            self,
+            preceded(
+                tuple((tag(map::READ), parse_u8, tag(map::READ_CURRENT_RECORD))),
+                Record::parse
+            ),
+            format_args!("{}{}{}", map::READ, n, map::READ_CURRENT_RECORD)
+        )
+    }
 
     pub fn set_respond_mode(
         &mut self,
