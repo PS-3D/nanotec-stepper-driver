@@ -6,6 +6,7 @@ macro_rules! makepl {
     };
 }
 
+// symbols of the commands in the order they appear in the manual
 #[rustfmt::skip]
 makepl!(
     READ, "Z",
@@ -20,7 +21,9 @@ makepl!(
     MAX_FREQUENCY, "o",
     MAX_FREQUENCY2, "n",
     ACCEL_RAMP, "b",
-    BRAKE_RAMP, "b",
+    ACCEL_RAMP_NO_CONVERSION, ":accel",
+    BRAKE_RAMP, "B",
+    BRAKE_RAMP_NO_CONVERSION, ":decel",
     ROTATION_DIRECTION, "d",
     ROTATION_DIRECTION_CHANGE, "t",
     REPETITIONS, "W",

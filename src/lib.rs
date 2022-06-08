@@ -2,5 +2,7 @@
 //!
 //! For more information see the [Manual](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 
-pub mod cmd;
+mod driver;
 pub(crate) mod util;
+
+pub use driver::{cmd::*, motor::Motor, responsehandle::ResponseHandle, Driver, DriverError};
