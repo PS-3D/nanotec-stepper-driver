@@ -228,7 +228,11 @@ impl<I: Write + Read> Driver<I> {
             DriverError::AlreadyExists(address)
         );
         // Shouldn't panic since we checked this before
-        inner.motors.insert(address, VecDeque::new()).unwrap();
+        inner
+            .motors
+            // chosen more or less randomly, 4 should suffice though
+            .insert(address, VecDeque::with_capacity(4))
+            .unwrap();
         Ok(Motor::new(self.inner.clone(), address))
     }
 }
