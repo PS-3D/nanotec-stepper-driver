@@ -44,11 +44,7 @@ where
             Some(p) => p,
             None => driver.receive(self.address)?,
         };
-        // can't be done with map due to borrow rules
-        match (self.parser)(&payload) {
-            Err(_) => Err(DriverError::NonMatchingPayloads(payload)),
-            Ok(t) => Ok(t),
-        }
+        (self.parser)(&payload)
     }
 }
 
