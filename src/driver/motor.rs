@@ -1,7 +1,6 @@
-mod map;
-
 use super::{
     cmd::{MotorStop, PositioningMode, Record, RespondMode, RotationDirection},
+    map,
     responsehandle::{ReadResponseHandle, ResponseHandle, WriteResponseHandle},
     DriverError, InnerDriver,
 };

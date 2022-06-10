@@ -1,4 +1,5 @@
 pub mod cmd;
+mod map;
 pub mod motor;
 pub mod responsehandle;
 
