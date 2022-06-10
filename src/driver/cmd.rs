@@ -13,12 +13,7 @@ use super::{
     map,
     parse::{parse_su16, parse_su32, parse_su8},
 };
-use nom::{
-    self,
-    character::complete::{i32 as parse_i32, u16 as parse_u16, u32 as parse_u32, u8 as parse_u8},
-    error::FromExternalError,
-    IResult, Parser,
-};
+use nom::{self, character::complete::i32 as parse_i32, error::FromExternalError, IResult, Parser};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt::{Debug, Display};
@@ -190,22 +185,25 @@ pub struct Record {
 
 impl Record {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        use nom::sequence::tuple;
+        use nom::{
+            bytes::complete::tag,
+            sequence::{preceded, tuple},
+        };
         tuple((
-            PositioningMode::parse,
-            parse_i32,
-            parse_u32,
-            parse_u32,
-            parse_u32,
-            parse_u16,
-            parse_u16,
-            RotationDirection::parse,
-            parse_u8.map(|n| n == 1),
-            parse_u32,
-            parse_u16,
-            parse_u8,
-            parse_u32,
-            parse_u32,
+            preceded(tag(map::POSITIONING_MODE), PositioningMode::parse),
+            preceded(tag(map::TRAVEL_DISTANCE), parse_i32),
+            preceded(tag(map::MIN_FREQUENCY), parse_su32),
+            preceded(tag(map::MAX_FREQUENCY), parse_su32),
+            preceded(tag(map::MAX_FREQUENCY2), parse_su32),
+            preceded(tag(map::ACCEL_RAMP), parse_su16),
+            preceded(tag(map::BRAKE_RAMP), parse_su16),
+            preceded(tag(map::ROTATION_DIRECTION), RotationDirection::parse),
+            preceded(tag(map::ROTATION_DIRECTION_CHANGE), parse_su8).map(|n| n == 1),
+            preceded(tag(map::REPETITIONS), parse_su32),
+            preceded(tag(map::RECORD_PAUSE), parse_su16),
+            preceded(tag(map::CONTINUATION_RECORD), parse_su8),
+            preceded(tag(map::MAX_ACCEL_JERK), parse_su32),
+            preceded(tag(map::MAX_BRAKE_JERK), parse_su32),
         ))
         .map(
             |(
@@ -250,6 +248,7 @@ pub(super) struct Msg {
     pub payload: Vec<u8>,
 }
 
+// TODO impl ? operator
 impl Msg {
     pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         use nom::{
@@ -258,6 +257,7 @@ impl Msg {
             character::complete::u8,
             sequence::{terminated, tuple},
         };
+        // don't parse hashtags cause the motors dont send hashtags
         tuple((
             alt((tag(b"*").map(|_: &[u8]| None), u8.map(Option::from))),
             terminated(take_until1(b"\r" as &[u8]), tag(b"\r")),
