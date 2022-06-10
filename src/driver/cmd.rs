@@ -165,6 +165,9 @@ impl Display for RotationDirection {
     }
 }
 
+/// Holds a Record
+///
+/// See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Record {
     pub positioning_mode: PositioningMode,
