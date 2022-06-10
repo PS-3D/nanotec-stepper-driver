@@ -81,8 +81,7 @@ impl<I: Write + Read> InnerDriver<I> {
     // receives a single msg from the interface and parses it into a Msg
     fn receive_msg(&mut self) -> Result<Msg, DriverError> {
         // size chosen more or less randomly, should fit most messages
-        // TODO increase to 64
-        let mut buf = Vec::with_capacity(32);
+        let mut buf = Vec::with_capacity(64);
         self.interface.read_until(b'\r', &mut buf)?;
         let (_, msg) = Msg::parse(&buf)
             .finish()
