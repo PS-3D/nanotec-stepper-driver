@@ -131,6 +131,8 @@ fn record_parse() {
         repetitions: 1,
         record_pause: 0,
         continuation_record: 0,
+        max_accel_jerk: 1,
+        max_brake_jerk: 0,
     };
     assert_eq!(r, expected);
 }

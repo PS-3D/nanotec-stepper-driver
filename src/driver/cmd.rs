@@ -180,6 +180,8 @@ pub struct Record {
     pub repetitions: u32,
     pub record_pause: u16,
     pub continuation_record: u8,
+    pub max_accel_jerk: u32,
+    pub max_brake_jerk: u32,
 }
 
 impl Record {
@@ -198,6 +200,8 @@ impl Record {
             parse_u32,
             parse_u16,
             parse_u8,
+            parse_u32,
+            parse_u32,
         ))
         .map(
             |(
@@ -213,6 +217,8 @@ impl Record {
                 repetitions,
                 record_pause,
                 continuation_record,
+                max_accel_jerk,
+                max_brake_jerk,
             )| Self {
                 positioning_mode,
                 travel_distance,
@@ -226,6 +232,8 @@ impl Record {
                 repetitions,
                 record_pause,
                 continuation_record,
+                max_accel_jerk,
+                max_brake_jerk,
             },
         )
         .parse(s)
