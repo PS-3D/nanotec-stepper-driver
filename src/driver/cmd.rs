@@ -9,6 +9,10 @@
 #[cfg(test)]
 mod tests;
 
+use super::{
+    map,
+    parse::{parse_su16, parse_su32, parse_su8},
+};
 use nom::{
     self,
     character::complete::{i32 as parse_i32, u16 as parse_u16, u32 as parse_u32, u8 as parse_u8},
@@ -69,7 +73,7 @@ pub enum MotorType {
 
 impl MotorType {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        parse_enum_value(s, parse_u8, MotorType::from_u8)
+        parse_enum_value(s, parse_su8, MotorType::from_u8)
     }
 }
 
@@ -101,7 +105,7 @@ pub enum RespondMode {
 
 impl RespondMode {
     pub(super) fn parse<'b>(s: &'b [u8]) -> IResult<&'b [u8], Self> {
-        parse_enum_value(s, parse_u8, RespondMode::from_u8)
+        parse_enum_value(s, parse_su8, RespondMode::from_u8)
     }
 }
 
@@ -137,7 +141,7 @@ pub enum PositioningMode {
 
 impl PositioningMode {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        parse_enum_value(s, parse_u8, PositioningMode::from_u8)
+        parse_enum_value(s, parse_su8, PositioningMode::from_u8)
     }
 }
 
@@ -156,7 +160,7 @@ pub enum RotationDirection {
 
 impl RotationDirection {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
-        parse_enum_value(s, parse_u8, RotationDirection::from_u8)
+        parse_enum_value(s, parse_su8, RotationDirection::from_u8)
     }
 }
 

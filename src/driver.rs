@@ -1,6 +1,7 @@
 pub mod cmd;
 mod map;
 pub mod motor;
+mod parse;
 pub mod responsehandle;
 
 use self::{cmd::Msg, motor::Motor};
