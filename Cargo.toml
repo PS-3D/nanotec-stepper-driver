@@ -14,3 +14,7 @@ thiserror = "1.0.31"
 [dev-dependencies]
 # only for doctests
 serialport = "4.2.0"
+nanotec-stepper-driver-test = {path = "nanotec-stepper-driver-test/"}
+
+[workspace]
+members = ["nanotec-stepper-driver-test"]
