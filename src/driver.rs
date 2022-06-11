@@ -48,8 +48,7 @@ pub enum DriverError {
     #[error(transparent)]
     IoError(#[from] io::Error),
     /// Wrapper arund [`nom::error::Error`]
-    // TODO probably remove from_utf8 since it could crash since 0 could be garbage
-    #[error("error {:?} while parsing message {}", .0.code, str::from_utf8(&.0.input).unwrap())]
+    #[error("error {:?} while parsing message {:?}", .0.code, .0.input)]
     ParsingError(nom::error::Error<Vec<u8>>),
 }
 
