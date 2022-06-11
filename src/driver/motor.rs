@@ -284,10 +284,7 @@ impl<I: Write + Read> Motor<I> {
     pub fn get_current_record(&mut self) -> Result<impl ResponseHandle<Record>, DriverError> {
         read!(
             self,
-            preceded(
-                tuple((tag(map::READ), tag(map::READ_CURRENT_RECORD))),
-                Record::parse
-            ),
+            preceded(tag(map::READ), Record::parse),
             format_args!("{}{}", map::READ, map::READ_CURRENT_RECORD)
         )
     }
@@ -297,10 +294,7 @@ impl<I: Write + Read> Motor<I> {
         ensure!(n <= 32, DriverError::InvalidArgument);
         read!(
             self,
-            preceded(
-                tuple((tag(map::READ), parse_u8, tag(map::READ_CURRENT_RECORD))),
-                Record::parse
-            ),
+            preceded(tuple((tag(map::READ), parse_u8)), Record::parse),
             format_args!("{}{}{}", map::READ, n, map::READ_CURRENT_RECORD)
         )
     }
