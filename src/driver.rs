@@ -40,6 +40,10 @@ pub enum DriverError {
     /// meaning that `driver.add_motor(<address>)` wasn't called beforehand.
     #[error("unexpected motor with address {0} responded")]
     UnexpectedResponse(u8),
+    /// Thrown by a function in [`Motor`] if the given motor is already waiting
+    /// on a response
+    #[error("motor is already waiting on a response and therefore not available")]
+    NotAvailable,
     /// Wrapper around [`io::Error`]
     #[error(transparent)]
     IoError(#[from] io::Error),
@@ -66,10 +70,16 @@ impl From<nom::error::Error<&[u8]>> for DriverError {
 }
 
 #[derive(Debug)]
+struct InnerMotor {
+    available: bool,
+    queue: VecDeque<Vec<u8>>,
+}
+
+#[derive(Debug)]
 struct InnerDriver<I: Write + Read> {
     interface: BufReader<I>,
     all: HashMap<Vec<u8>, u8>,
-    motors: HashMap<u8, VecDeque<Vec<u8>>>,
+    motors: HashMap<u8, InnerMotor>,
 }
 
 impl<I: Write + Read> InnerDriver<I> {
@@ -104,7 +114,7 @@ impl<I: Write + Read> InnerDriver<I> {
 
     fn check_msg(&mut self, address: u8) -> Option<Vec<u8>> {
         // shouldn't panic since we know the address exists
-        self.motors.get_mut(&address).unwrap().pop_front()
+        self.motors.get_mut(&address).unwrap().queue.pop_front()
     }
 
     // TODO adjust accordingly once receive_all is implemented
@@ -115,13 +125,18 @@ impl<I: Write + Read> InnerDriver<I> {
             match msg.address {
                 Some(a) => {
                     if a == address {
+                        // shouldn't panic since the motor has to exist if
+                        // it was waited on
+                        self.motors.get_mut(&a).unwrap().available = true;
                         return Ok(msg.payload);
                     } else {
-                        self.motors
+                        let imotor = self
+                            .motors
                             .get_mut(&a)
                             // if address is from unknown motor
-                            .ok_or(DriverError::UnexpectedResponse(a))?
-                            .push_back(msg.payload);
+                            .ok_or(DriverError::UnexpectedResponse(a))?;
+                        imotor.queue.push_back(msg.payload);
+                        imotor.available = true;
                     }
                 }
                 None => self.insert_count_all(msg.payload),
@@ -129,18 +144,13 @@ impl<I: Write + Read> InnerDriver<I> {
         }
     }
 
-    fn send_fmt(&mut self, args: Arguments<'_>) -> Result<(), DriverError> {
-        self.interface
-            .get_mut()
-            .write_fmt(args)
-            .map_err(DriverError::from)
-    }
-
-    fn send(&mut self, msg: &[u8]) -> Result<(), DriverError> {
-        self.interface
-            .get_mut()
-            .write_all(msg)
-            .map_err(DriverError::from)
+    fn send_fmt(&mut self, address: u8, args: Arguments<'_>) -> Result<(), DriverError> {
+        // shouldn't panic since the motor has to exist if a message was sent
+        // to it
+        let imotor = self.motors.get_mut(&address).unwrap();
+        ensure!(imotor.available, DriverError::NotAvailable);
+        imotor.available = false;
+        write!(self.interface.get_mut(), "#{}{}\r", address, args).map_err(DriverError::from)
     }
 }
 
@@ -230,7 +240,13 @@ impl<I: Write + Read> Driver<I> {
         inner
             .motors
             // chosen more or less randomly, 4 should suffice though
-            .insert(address, VecDeque::with_capacity(4));
+            .insert(
+                address,
+                InnerMotor {
+                    available: true,
+                    queue: VecDeque::with_capacity(4),
+                },
+            );
         Ok(Motor::new(self.inner.clone(), address))
     }
 }

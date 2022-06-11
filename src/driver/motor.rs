@@ -37,7 +37,7 @@ macro_rules! read {
             .driver
             .as_ref()
             .borrow_mut()
-            .send_fmt(format_args!("#{}{}\r", $self.address, $args))?;
+            .send_fmt($self.address, $args)?;
         Ok(ReadResponseHandle::new(
             $self.driver.clone(),
             $self.address,
@@ -135,7 +135,7 @@ macro_rules! write {
             .driver
             .as_ref()
             .borrow_mut()
-            .send_fmt(format_args!("#{}{}\r", $self.address, $args))?;
+            .send_fmt($self.address, $args)?;
         // unfortunately there isn't a better way rn.
         // value chosen sorta random, 64 bytes should be enough for nearly all
         // commands tho
@@ -181,7 +181,6 @@ macro_rules! long_write {
     };
 }
 
-// TODO return error if motor still waits for a command
 /// Controls a single motor
 ///
 /// This struct actually communicates with the motor. Basically all commands that
@@ -200,8 +199,9 @@ macro_rules! long_write {
 ///
 /// # Errors
 /// If a value doesn't match the specifications of the corresponding command
-/// in the manual, [`DriverError::InvalidArgument`] is returned. A
-/// [`DriverError::IoError`] is also possible, if there was an error sending the
+/// in the manual, [`DriverError::InvalidArgument`] is returned. If the given motor
+/// was already waiting for a response, [`DriverError::NotAvailable`] is returned.
+/// A [`DriverError::IoError`] is also possible, if there was an error sending the
 /// command.
 ///
 /// # Examples
