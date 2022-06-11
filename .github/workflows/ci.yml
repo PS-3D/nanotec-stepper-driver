@@ -27,7 +27,3 @@ jobs:
       with:
         command: doc
         args: --workspace --no-deps
-    - uses: actions/upload-artifact@v3.1.0
-      with:
-        name: docs
-        path: target/doc
