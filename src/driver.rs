@@ -227,12 +227,10 @@ impl<I: Write + Read> Driver<I> {
             !inner.motors.contains_key(&address),
             DriverError::AlreadyExists(address)
         );
-        // Shouldn't panic since we checked this before
         inner
             .motors
             // chosen more or less randomly, 4 should suffice though
-            .insert(address, VecDeque::with_capacity(4))
-            .unwrap();
+            .insert(address, VecDeque::with_capacity(4));
         Ok(Motor::new(self.inner.clone(), address))
     }
 }
