@@ -464,9 +464,10 @@ impl<I: Write + Read> Motor<I> {
         &mut self,
         change: bool,
     ) -> Result<impl ResponseHandle<()>, DriverError> {
-        short_write!(self, map::ROTATION_DIRECTION_CHANGE, change)
+        short_write!(self, map::ROTATION_DIRECTION_CHANGE, change as u8)
     }
 
+    // TODO maybe work out better type since 0 means endless
     pub fn get_repetitions(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
         short_read!(self, map::REPETITIONS, parse_u32)
     }
