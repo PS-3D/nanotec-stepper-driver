@@ -97,7 +97,7 @@ macro_rules! short_read {
                 ),
                 $parser
             ),
-            format_args!("{}", $mnemonic)
+            format_args!("Z{}", $mnemonic)
         )
     };
 }
