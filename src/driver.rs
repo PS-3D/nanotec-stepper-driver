@@ -325,7 +325,7 @@ impl<I: Write + Read> Driver<I> {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let driver = Driver::new(s);
+    /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
     pub fn add_all_motor(&mut self) -> Result<Motor<I>, DriverError> {
