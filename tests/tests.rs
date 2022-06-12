@@ -2,7 +2,7 @@ use nanotec_stepper_driver::{Driver, PositioningMode, Record, ResponseHandle, Ro
 use nanotec_stepper_driver_test::Interface;
 
 #[test]
-fn test_single() {
+fn single() {
     let mut interface = Interface::new();
     let mut driver = Driver::new(interface.clone());
     let mut m1 = driver.add_motor(1).unwrap();
@@ -46,11 +46,12 @@ fn test_single() {
 }
 
 #[test]
-fn test_concurrent() {
+fn concurrent() {
     let mut interface = Interface::new();
     let mut driver = Driver::new(interface.clone());
     let mut m1 = driver.add_motor(1).unwrap();
     let mut m2 = driver.add_motor(2).unwrap();
+
     interface.add_write(b"#1Z|\r");
     interface.add_write(b"#2y3\r");
     let h1 = m1.get_current_record().unwrap();
@@ -78,4 +79,67 @@ fn test_concurrent() {
     let r = h1.wait().unwrap();
     assert_eq!(r, expected_record);
     h2.wait().unwrap();
+
+    interface.add_write(b"#1p2\r");
+    let h1 = m1.set_positioning_mode(PositioningMode::Absolute).unwrap();
+    interface.add_cmd_echo(b"#2s1337\r");
+    let h2 = m2.set_travel_distance(1337).unwrap();
+    interface.add_read(b"1p2\r");
+    h1.wait().unwrap();
+    h2.wait().unwrap();
+
+    interface.add_write(b"#2Zo\r");
+    let h2 = m2.get_max_frequency().unwrap();
+    interface.add_cmd_echo(b"#1s1337\r");
+    let h1 = m1.set_travel_distance(1337).unwrap();
+    interface.add_read(b"2Zo42\r");
+    assert_eq!(h2.wait().unwrap(), 42);
+    h1.wait().unwrap();
+
+    interface.add_cmd_echo(b"#1B69\r");
+    let h1 = m1.set_brake_ramp(69).unwrap();
+    interface.add_cmd_echo(b"#2o69\r");
+    let h2 = m2.set_max_frequency(69).unwrap();
+    h1.wait().unwrap();
+    h2.wait().unwrap();
+
+    interface.add_cmd_echo(b"#1d0\r");
+    let h1 = m1.set_rotation_direction(RotationDirection::Left).unwrap();
+    interface.add_cmd_echo(b"#2t0\r");
+    let h2 = m2.set_rotation_direction_change(false).unwrap();
+    h1.wait().unwrap();
+    h2.wait().unwrap();
+
+    interface.add_write(b"#2A\r");
+    let h2 = m2.start_motor().unwrap();
+    interface.add_write(b"#1A\r");
+    let h1 = m1.start_motor().unwrap();
+    interface.add_read(b"2A\r");
+    h2.wait().unwrap();
+    interface.add_read(b"1A\r");
+    h1.wait().unwrap();
+}
+
+#[test]
+fn all() {
+    let mut interface = Interface::new();
+    let mut driver = Driver::new(interface.clone());
+    let mut m1 = driver.add_motor(1).unwrap();
+    let mut m2 = driver.add_motor(2).unwrap();
+    let mut all = driver.add_all_motor().unwrap();
+
+    interface.add_cmd_echo(b"#*s1337\r");
+    interface.add_read(b"*s1337\r");
+    all.set_travel_distance(1337).unwrap().wait().unwrap();
+
+    interface.add_cmd_echo(b"#1d0\r");
+    let h1 = m1.set_rotation_direction(RotationDirection::Left).unwrap();
+    interface.add_cmd_echo(b"#2d1\r");
+    let h2 = m2.set_rotation_direction(RotationDirection::Right).unwrap();
+    h1.wait().unwrap();
+    h2.wait().unwrap();
+
+    interface.add_cmd_echo(b"#*A\r");
+    interface.add_read(b"*A\r");
+    all.start_motor().unwrap().wait().unwrap();
 }
