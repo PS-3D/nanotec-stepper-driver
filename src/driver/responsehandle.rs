@@ -29,7 +29,7 @@ pub trait ResponseHandle<T> {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let driver = Driver::new(s);
+    /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1).unwrap();
     ///
     /// let handle = m1.start_motor().unwrap();
@@ -48,7 +48,7 @@ pub trait ResponseHandle<T> {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let driver = Driver::new(s);
+    /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1).unwrap();
     /// let mut m2 = driver.add_motor(2).unwrap();
     ///

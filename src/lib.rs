@@ -26,7 +26,7 @@
 //!     .timeout(Duration::from_secs(1))
 //!     .open()
 //!     .unwrap();
-//! let driver = Driver::new(s);
+//! let mut driver = Driver::new(s);
 //! let mut m1 = driver.add_motor(1).unwrap();
 //!
 //! m1.load_record(3).unwrap().wait().unwrap();

@@ -4,7 +4,7 @@ use nanotec_stepper_driver_test::Interface;
 #[test]
 fn test_single() {
     let mut interface = Interface::new();
-    let driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(interface.clone());
     let mut m1 = driver.add_motor(1).unwrap();
     interface.add_cmd_echo(b"#1p2\r");
     m1.set_positioning_mode(PositioningMode::Absolute)
@@ -48,7 +48,7 @@ fn test_single() {
 #[test]
 fn test_concurrent() {
     let mut interface = Interface::new();
-    let driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(interface.clone());
     let mut m1 = driver.add_motor(1).unwrap();
     let mut m2 = driver.add_motor(2).unwrap();
     interface.add_write(b"#1Z|\r");

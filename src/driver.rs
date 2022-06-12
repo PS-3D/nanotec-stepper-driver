@@ -276,10 +276,10 @@ impl<I: Write + Read> Driver<I> {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let driver = Driver::new(s);
+    /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1).unwrap();
     /// ```
-    pub fn add_motor(&self, address: u8) -> Result<Motor<I>, DriverError> {
+    pub fn add_motor(&mut self, address: u8) -> Result<Motor<I>, DriverError> {
         ensure!(
             address >= 1 && address <= 254,
             DriverError::InvalidAddress(address)
