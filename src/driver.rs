@@ -13,7 +13,6 @@ use std::{
     fmt::Arguments,
     io::{self, BufRead, BufReader, Read, Write},
     rc::Rc,
-    str,
 };
 use thiserror::Error;
 
@@ -77,14 +76,25 @@ struct InnerMotor {
 #[derive(Debug)]
 struct InnerDriver<I: Write + Read> {
     interface: BufReader<I>,
-    all: HashMap<Vec<u8>, u8>,
+    // TODO optimise
+    // the u8 basically acts like a semaphore, once it reaches 0 we know we
+    // received answers from all motors. it is initialized to the current motor
+    // count in send_all
+    all: VecDeque<(u8, Vec<u8>)>,
+    all_exists: bool,
     motors: HashMap<u8, InnerMotor>,
 }
 
 impl<I: Write + Read> InnerDriver<I> {
     // Should only be called by the drop function in Motor
-    fn drop_motor(&mut self, address: &u8) {
+    pub fn drop_motor(&mut self, address: &u8) {
         self.motors.remove(address);
+    }
+
+    // check if the driver is currently waiting for replies to a command for all
+    // motors
+    fn is_waiting_all(&self) -> bool {
+        self.all.back().map_or(false, |(s, _)| *s != 0)
     }
 
     // receives a single msg from the interface and parses it into a Msg
@@ -102,54 +112,92 @@ impl<I: Write + Read> InnerDriver<I> {
         Ok(msg)
     }
 
-    // inserts a payload into the self.all map or updates the value
-    fn insert_count_all(&mut self, payload: Vec<u8>) -> () {
-        if let Some(c) = self.all.get_mut(&payload) {
-            *c += 1;
+    pub fn receive_single(&mut self, address: u8) -> Result<Vec<u8>, DriverError> {
+        // if there's one already in the buffer, return that
+        // shouldn't panic because this shouldn't get called on an address that
+        // doesn't already exist
+        if let Some(p) = self.motors.get_mut(&address).unwrap().queue.pop_front() {
+            Ok(p)
         } else {
-            self.all.insert(payload, 1).unwrap();
-        }
-    }
-
-    fn check_msg(&mut self, address: u8) -> Option<Vec<u8>> {
-        // shouldn't panic since we know the address exists
-        self.motors.get_mut(&address).unwrap().queue.pop_front()
-    }
-
-    // TODO adjust accordingly once receive_all is implemented
-    // receives messages until one for address is found, which is then returned
-    fn receive(&mut self, address: u8) -> Result<Vec<u8>, DriverError> {
-        loop {
-            let msg = self.receive_msg()?;
-            match msg.address {
-                Some(a) => {
+            // if we're waiting for a response from a single motors, there shouldn't
+            // be a response to an all command so we can massively
+            // simplify the receiving process
+            loop {
+                let msg = self.receive_msg()?;
+                if let Some(a) = msg.address {
+                    let imotor = self
+                        .motors
+                        .get_mut(&a)
+                        // if motor address was unknown
+                        .ok_or(DriverError::UnexpectedResponse(a))?;
+                    imotor.available = true;
                     if a == address {
-                        // shouldn't panic since the motor has to exist if
-                        // it was waited on
-                        self.motors.get_mut(&a).unwrap().available = true;
                         return Ok(msg.payload);
                     } else {
-                        let imotor = self
-                            .motors
-                            .get_mut(&a)
-                            // if address is from unknown motor
-                            .ok_or(DriverError::UnexpectedResponse(a))?;
                         imotor.queue.push_back(msg.payload);
-                        imotor.available = true;
                     }
+                } else {
+                    // TODO add special case for all instead of 0
+                    // if a motor responded to an all command
+                    return Err(DriverError::UnexpectedResponse(0));
                 }
-                None => self.insert_count_all(msg.payload),
             }
         }
     }
 
-    fn send_fmt(&mut self, address: u8, args: Arguments<'_>) -> Result<(), DriverError> {
+    pub fn receive_all(&mut self) -> Result<Vec<u8>, DriverError> {
+        // if receive all has been called there should always at least be one
+        // front entry
+        if self.all.front().unwrap().0 != 0 {
+            // if we're waiting for a response from all motors, there shouldn't
+            // be a response from one with a singular address so we can massively
+            // simplify the receiving process
+            for _ in 0..self.all.front().unwrap().0 {
+                let msg = self.receive_msg()?;
+                ensure!(
+                    msg.address.is_none(),
+                    DriverError::UnexpectedResponse(msg.address.unwrap())
+                );
+                let front = self.all.front_mut().unwrap();
+                ensure!(
+                    msg.payload == front.1,
+                    DriverError::NonMatchingPayloads(msg.payload)
+                );
+                front.0 -= 1;
+            }
+        }
+        Ok(self.all.pop_front().unwrap().1)
+    }
+
+    pub fn send_single(&mut self, address: u8, args: Arguments<'_>) -> Result<(), DriverError> {
+        // if we are waiting for a response from all motors we can't send to
+        // a singular motor because we don't know if it's ready yet. only when
+        // all motors answered we can be sure
+        ensure!(!self.is_waiting_all(), DriverError::NotAvailable);
         // shouldn't panic since the motor has to exist if a message was sent
         // to it
         let imotor = self.motors.get_mut(&address).unwrap();
         ensure!(imotor.available, DriverError::NotAvailable);
         imotor.available = false;
         write!(self.interface.get_mut(), "#{}{}\r", address, args).map_err(DriverError::from)
+    }
+
+    pub fn send_all(&mut self, args: Arguments<'_>) -> Result<(), DriverError> {
+        // since messages to all motors shouldn't happen that often it can take
+        // a bit longer. if it's a problem a semaphore would be a fix for it
+        ensure!(
+            self.motors.values().all(|m| m.available) && !self.is_waiting_all(),
+            DriverError::NotAvailable
+        );
+        // size chosen more or less randomly, should fit most messages
+        let mut sent = Vec::with_capacity(64);
+        write!(sent, "{}", args)?;
+        let iface = self.interface.get_mut();
+        iface.write_all(b"#*")?;
+        iface.write_all(&sent)?;
+        iface.write_all(b"\r")?;
+        self.all.push_back((self.motors.len() as u8, sent));
+        Ok(())
     }
 }
 
@@ -195,7 +243,8 @@ impl<I: Write + Read> Driver<I> {
                 // wrap into bufreader so receiving until '\r' is easier
                 interface: BufReader::new(interface),
                 // chosen more or less arbitrarily
-                all: HashMap::with_capacity(16),
+                all: VecDeque::with_capacity(8),
+                all_exists: false,
                 // maximium number of motors
                 motors: HashMap::with_capacity(254),
             })),

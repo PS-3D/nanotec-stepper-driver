@@ -37,7 +37,7 @@ macro_rules! read {
             .driver
             .as_ref()
             .borrow_mut()
-            .send_fmt($self.address, $args)?;
+            .send_single($self.address, $args)?;
         Ok(ReadResponseHandle::new(
             $self.driver.clone(),
             $self.address,
@@ -135,7 +135,7 @@ macro_rules! write {
             .driver
             .as_ref()
             .borrow_mut()
-            .send_fmt($self.address, $args)?;
+            .send_single($self.address, $args)?;
         // unfortunately there isn't a better way rn.
         // value chosen sorta random, 64 bytes should be enough for nearly all
         // commands tho

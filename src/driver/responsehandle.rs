@@ -98,10 +98,7 @@ where
 {
     fn wait(self) -> Result<T, DriverError> {
         let mut driver = self.driver.as_ref().borrow_mut();
-        let payload = match driver.check_msg(self.address) {
-            Some(p) => p,
-            None => driver.receive(self.address)?,
-        };
+        let payload = driver.receive_single(self.address)?;
         (self.parser)(&payload)
     }
 }
@@ -130,10 +127,7 @@ impl<I: Write + Read> WriteResponseHandle<I> {
 impl<I: Write + Read> ResponseHandle<()> for WriteResponseHandle<I> {
     fn wait(self) -> Result<(), DriverError> {
         let mut driver = self.driver.as_ref().borrow_mut();
-        let payload = match driver.check_msg(self.address) {
-            Some(p) => p,
-            None => driver.receive(self.address)?,
-        };
+        let payload = driver.receive_single(self.address)?;
         if self.sent == payload {
             Ok(())
         } else {
