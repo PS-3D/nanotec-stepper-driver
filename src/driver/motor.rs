@@ -26,41 +26,49 @@ use std::{
 // command and extracts a value.
 // args are the format_arguments for the payload to send.
 //
+// panics if this motor is the all motor i.e. if self.addres == None
+//
 // an invocation of this macro could look like this:
 // read!(self, preceded(tag("Zs"), parse_i32), format_args!("Zs"))
 //
 // usually it is invoked by the short_read or long_read macros though
 macro_rules! read {
     ($self:expr, $parser:expr, $args:expr) => {{
-        // send command
-        $self
-            .driver
-            .as_ref()
-            .borrow_mut()
-            .send_single($self.address, $args)?;
-        Ok(ReadResponseHandle::new(
-            $self.driver.clone(),
-            $self.address,
-            // parsing closure
-            move |input| {
-                let (remainder, t) =
-                    $parser
-                        .parse(input)
-                        .finish()
-                        .map_err(|_: nom::error::Error<&[u8]>| {
-                            DriverError::NonMatchingPayloads(input.to_vec())
-                        })?;
-                if !remainder.is_empty() {
-                    // TODO make own errorkind, adjust doc for wait
-                    Err(DriverError::ParsingError(nom::error::Error {
-                        input: remainder.to_vec(),
-                        code: nom::error::ErrorKind::TooLarge,
-                    }))
-                } else {
-                    Ok(t)
-                }
-            },
-        ))
+        if let Some(address) = $self.address {
+            // send command
+            $self
+                .driver
+                .as_ref()
+                .borrow_mut()
+                .send_single(address, $args)?;
+            Ok(ReadResponseHandle::new(
+                $self.driver.clone(),
+                address,
+                // parsing closure
+                move |input| {
+                    let (remainder, t) =
+                        $parser
+                            .parse(input)
+                            .finish()
+                            .map_err(|_: nom::error::Error<&[u8]>| {
+                                DriverError::NonMatchingPayloads(input.to_vec())
+                            })?;
+                    if !remainder.is_empty() {
+                        // TODO make own errorkind, adjust doc for wait
+                        Err(DriverError::ParsingError(nom::error::Error {
+                            input: remainder.to_vec(),
+                            code: nom::error::ErrorKind::TooLarge,
+                        }))
+                    } else {
+                        Ok(t)
+                    }
+                },
+            ))
+        } else {
+            // a read command to all motors would be stupid, you wouldn't be
+            // able to distinguish the answers
+            panic!("Can't send a read command to all motors")
+        }
     }};
 }
 
@@ -131,11 +139,11 @@ macro_rules! long_read {
 // usually it is invoked by the short_write or long_write macros though
 macro_rules! write {
     ($self:expr, $args:expr) => {{
-        $self
-            .driver
-            .as_ref()
-            .borrow_mut()
-            .send_single($self.address, $args)?;
+        if let Some(a) = $self.address {
+            $self.driver.as_ref().borrow_mut().send_single(a, $args)?;
+        } else {
+            $self.driver.as_ref().borrow_mut().send_all($args)?;
+        }
         // unfortunately there isn't a better way rn.
         // value chosen sorta random, 64 bytes should be enough for nearly all
         // commands tho
@@ -181,7 +189,7 @@ macro_rules! long_write {
     };
 }
 
-/// Controls a single motor
+/// Controls a single motor or all motors at once
 ///
 /// This struct actually communicates with the motor. Basically all commands that
 /// can be found in the manual are mapped to methods in this struct. Usually a
@@ -201,8 +209,18 @@ macro_rules! long_write {
 /// If a value doesn't match the specifications of the corresponding command
 /// in the manual, [`DriverError::InvalidArgument`] is returned. If the given motor
 /// was already waiting for a response, [`DriverError::NotAvailable`] is returned.
+/// A [`DriverError::NotAvailable`] is also returned if a command is sent to all
+/// motors while some are still waiting for a response. Or if a command is sent
+/// to a single motors while not all motors have responded to a command for all
+/// motors yet, since it isn't possible to distinguish the responses from single
+/// motors in that case.
 /// A [`DriverError::IoError`] is also possible, if there was an error sending the
 /// command.
+///
+/// # Panics
+/// If this is the all-motor, i.e. the motor used to send commands to all motors,
+/// and a getter is called, the getter panics since it isn't possible to distinguish
+/// the answers from the motors
 ///
 /// # Examples
 /// ```no_run
@@ -252,11 +270,11 @@ macro_rules! long_write {
 #[derive(Debug)]
 pub struct Motor<I: Write + Read> {
     driver: Rc<RefCell<InnerDriver<I>>>,
-    address: u8,
+    address: Option<u8>,
 }
 
 impl<I: Write + Read> Motor<I> {
-    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: u8) -> Self {
+    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: Option<u8>) -> Self {
         Motor { driver, address }
     }
 
@@ -489,6 +507,7 @@ impl<I: Write + Read> Motor<I> {
         short_read!(self, map::CONTINUATION_RECORD, parse_u8)
     }
 
+    // TODO make option for no continuation record
     pub fn set_continuation_record(
         &mut self,
         n: u8,
@@ -523,6 +542,10 @@ impl<I: Write + Read> Drop for Motor<I> {
     ///
     /// See also [here][`Drop`]
     fn drop(&mut self) {
-        self.driver.as_ref().borrow_mut().drop_motor(&self.address)
+        if let Some(a) = self.address {
+            self.driver.as_ref().borrow_mut().drop_motor(&a)
+        } else {
+            self.driver.as_ref().borrow_mut().drop_all_motor()
+        }
     }
 }

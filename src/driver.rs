@@ -91,6 +91,11 @@ impl<I: Write + Read> InnerDriver<I> {
         self.motors.remove(address);
     }
 
+    // Should only be called by the drop function in Motor
+    pub fn drop_all_motor(&mut self) {
+        self.all_exists = false;
+    }
+
     // check if the driver is currently waiting for replies to a command for all
     // motors
     fn is_waiting_all(&self) -> bool {
@@ -295,6 +300,39 @@ impl<I: Write + Read> Driver<I> {
                     queue: VecDeque::with_capacity(4),
                 },
             );
-        Ok(Motor::new(self.inner.clone(), address))
+        Ok(Motor::new(self.inner.clone(), Some(address)))
+    }
+
+    /// Returns a motor that represents all motors, the so-called all-motor.
+    /// That means that commands can be sent to all motors. That is only possible
+    /// though while all motors are ready to receive and only possible on write
+    /// commands, meaning mostly setters and things like starting a motor.
+    ///
+    /// A motor is removed from the driver simply by dropping it. See also
+    /// [`Motor::drop`].
+    ///
+    /// # Errors
+    /// If the all-motor already exists in this driver, [`DriverError::AlreadyExists`]
+    /// is returned.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use nanotec_stepper_driver::Driver;
+    /// use std::time::Duration;
+    /// use serialport;
+    ///
+    /// let s = serialport::new("/dev/ttyUSB0", 115200)
+    ///     .timeout(Duration::from_secs(1))
+    ///     .open()
+    ///     .unwrap();
+    /// let driver = Driver::new(s);
+    /// let mut m1 = driver.add_all_motor().unwrap();
+    /// ```
+    pub fn add_all_motor(&mut self) -> Result<Motor<I>, DriverError> {
+        let mut inner = self.inner.as_ref().borrow_mut();
+        // TODO add special case for all instead of 0
+        ensure!(!inner.all_exists, DriverError::AlreadyExists(0));
+        inner.all_exists = true;
+        Ok(Motor::new(self.inner.clone(), None))
     }
 }

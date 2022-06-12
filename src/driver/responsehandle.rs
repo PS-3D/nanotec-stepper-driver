@@ -109,13 +109,13 @@ where
 // sent and it also makes WriteResponseHandle::wait a bit faster
 pub(super) struct WriteResponseHandle<I: Write + Read> {
     driver: Rc<RefCell<InnerDriver<I>>>,
-    address: u8,
+    address: Option<u8>,
     // payload we sent
     sent: Vec<u8>,
 }
 
 impl<I: Write + Read> WriteResponseHandle<I> {
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: u8, sent: Vec<u8>) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: Option<u8>, sent: Vec<u8>) -> Self {
         Self {
             driver,
             address,
@@ -127,7 +127,10 @@ impl<I: Write + Read> WriteResponseHandle<I> {
 impl<I: Write + Read> ResponseHandle<()> for WriteResponseHandle<I> {
     fn wait(self) -> Result<(), DriverError> {
         let mut driver = self.driver.as_ref().borrow_mut();
-        let payload = driver.receive_single(self.address)?;
+        let payload = match self.address {
+            Some(a) => driver.receive_single(a)?,
+            None => driver.receive_all()?,
+        };
         if self.sent == payload {
             Ok(())
         } else {
