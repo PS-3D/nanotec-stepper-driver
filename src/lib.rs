@@ -18,7 +18,7 @@
 //!
 //! # Examples
 //! ```no_run
-//! # use nanotec_stepper_driver::{Driver, ResponseHandle};
+//! # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
 //! use std::time::Duration;
 //! use serialport;
 //!
@@ -27,7 +27,7 @@
 //!     .open()
 //!     .unwrap();
 //! let mut driver = Driver::new(s);
-//! let mut m1 = driver.add_motor(1).unwrap();
+//! let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 //!
 //! m1.load_record(3).unwrap().wait().unwrap();
 //! m1.set_continuation_record(0).unwrap().wait().unwrap();

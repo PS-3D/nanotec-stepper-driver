@@ -102,6 +102,14 @@ impl RespondMode {
     pub(super) fn parse<'b>(s: &'b [u8]) -> IResult<&'b [u8], Self> {
         parse_enum_value(s, parse_su8, RespondMode::from_u8)
     }
+
+    pub fn is_quiet(&self) -> bool {
+        *self == RespondMode::Quiet
+    }
+
+    pub fn is_responding(&self) -> bool {
+        *self == RespondMode::NotQuiet
+    }
 }
 
 impl Display for RespondMode {

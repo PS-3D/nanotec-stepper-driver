@@ -21,7 +21,7 @@ pub trait ResponseHandle<T> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use nanotec_stepper_driver::{Driver, ResponseHandle};
+    /// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
     /// use std::time::Duration;
     /// use serialport;
     ///
@@ -30,7 +30,7 @@ pub trait ResponseHandle<T> {
     ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
-    /// let mut m1 = driver.add_motor(1).unwrap();
+    /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     ///
     /// let handle = m1.start_motor().unwrap();
     /// println!("started motor");
@@ -40,7 +40,7 @@ pub trait ResponseHandle<T> {
     /// A [`ResponseHandle`] can also be used to send commands to 2 motors at
     /// once:
     /// ```no_run
-    /// # use nanotec_stepper_driver::{Driver, ResponseHandle};
+    /// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
     /// use std::time::Duration;
     /// use serialport;
     ///
@@ -49,8 +49,8 @@ pub trait ResponseHandle<T> {
     ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
-    /// let mut m1 = driver.add_motor(1).unwrap();
-    /// let mut m2 = driver.add_motor(2).unwrap();
+    /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+    /// let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
     ///
     /// let handle1 = m1.start_motor().unwrap();
     /// let handle2 = m2.start_motor().unwrap();
@@ -135,6 +135,38 @@ impl<I: Write + Read> ResponseHandle<()> for WriteResponseHandle<I> {
             Ok(())
         } else {
             Err(DriverError::NonMatchingPayloads(payload))
+        }
+    }
+}
+
+// Responsehandle for motors with RespondMode::Quiet
+pub(super) struct DummyResponseHandle();
+
+impl DummyResponseHandle {
+    pub fn new() -> Self {
+        Self()
+    }
+}
+
+impl ResponseHandle<()> for DummyResponseHandle {
+    fn wait(self) -> Result<(), DriverError> {
+        Ok(())
+    }
+}
+
+// Wrapper so we can return Write and Dummy, read is not needed since read
+// commands always return a value
+pub(super) enum WrapperResponseHandle<I: Read + Write> {
+    Write(WriteResponseHandle<I>),
+    Dummy(DummyResponseHandle),
+}
+
+impl<I: Write + Read> ResponseHandle<()> for WrapperResponseHandle<I> {
+    fn wait(self) -> Result<(), DriverError> {
+        use WrapperResponseHandle::*;
+        match self {
+            Write(h) => h.wait(),
+            Dummy(h) => h.wait(),
         }
     }
 }

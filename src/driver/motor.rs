@@ -1,7 +1,10 @@
 use super::{
     cmd::{MotorStop, PositioningMode, Record, RespondMode, RotationDirection},
     map,
-    responsehandle::{ReadResponseHandle, ResponseHandle, WriteResponseHandle},
+    responsehandle::{
+        DummyResponseHandle, ReadResponseHandle, ResponseHandle, WrapperResponseHandle,
+        WriteResponseHandle,
+    },
     DriverError, InnerDriver,
 };
 use crate::util::ensure;
@@ -27,6 +30,7 @@ use std::{
 // args are the format_arguments for the payload to send.
 //
 // panics if this motor is the all motor i.e. if self.addres == None
+// panics if the respondmode is NotQuiet
 //
 // an invocation of this macro could look like this:
 // read!(self, preceded(tag("Zs"), parse_i32), format_args!("Zs"))
@@ -34,41 +38,38 @@ use std::{
 // usually it is invoked by the short_read or long_read macros though
 macro_rules! read {
     ($self:expr, $parser:expr, $args:expr) => {{
-        if let Some(address) = $self.address {
-            // send command
-            $self
-                .driver
-                .as_ref()
-                .borrow_mut()
-                .send_single(address, $args)?;
-            Ok(ReadResponseHandle::new(
-                $self.driver.clone(),
-                address,
-                // parsing closure
-                move |input| {
-                    let (remainder, t) =
-                        $parser
-                            .parse(input)
-                            .finish()
-                            .map_err(|_: nom::error::Error<&[u8]>| {
-                                DriverError::NonMatchingPayloads(input.to_vec())
-                            })?;
-                    if !remainder.is_empty() {
-                        // TODO make own errorkind, adjust doc for wait
-                        Err(DriverError::ParsingError(nom::error::Error {
-                            input: remainder.to_vec(),
-                            code: nom::error::ErrorKind::TooLarge,
-                        }))
-                    } else {
-                        Ok(t)
-                    }
-                },
-            ))
-        } else {
-            // a read command to all motors would be stupid, you wouldn't be
-            // able to distinguish the answers
-            panic!("Can't send a read command to all motors")
-        }
+        // a read command to all motors would be stupid, you wouldn't be
+        // able to distinguish the answers
+        let address = $self
+            .address
+            .expect("Can't send a read command to all motors");
+        let mut driver = $self.driver.as_ref().borrow_mut();
+        assert_eq!(driver.get_respond_mode(address), RespondMode::NotQuiet);
+        // send command
+        driver.send_single_with_response(address, $args)?;
+        Ok(ReadResponseHandle::new(
+            $self.driver.clone(),
+            address,
+            // parsing closure
+            move |input| {
+                let (remainder, t) =
+                    $parser
+                        .parse(input)
+                        .finish()
+                        .map_err(|_: nom::error::Error<&[u8]>| {
+                            DriverError::NonMatchingPayloads(input.to_vec())
+                        })?;
+                if !remainder.is_empty() {
+                    // TODO make own errorkind, adjust doc for wait
+                    Err(DriverError::ParsingError(nom::error::Error {
+                        input: remainder.to_vec(),
+                        code: nom::error::ErrorKind::TooLarge,
+                    }))
+                } else {
+                    Ok(t)
+                }
+            },
+        ))
     }};
 }
 
@@ -139,21 +140,33 @@ macro_rules! long_read {
 // usually it is invoked by the short_write or long_write macros though
 macro_rules! write {
     ($self:expr, $args:expr) => {{
-        if let Some(a) = $self.address {
-            $self.driver.as_ref().borrow_mut().send_single(a, $args)?;
+        let rm = match $self.address {
+            Some(a) => {
+                let mut driver = $self.driver.as_ref().borrow_mut();
+                let rm = driver.get_respond_mode(a);
+                if rm == RespondMode::NotQuiet {
+                    driver.send_single_with_response(a, $args)?;
+                } else {
+                    driver.send_single_no_response(a, $args)?;
+                }
+                rm
+            }
+            None => $self.driver.as_ref().borrow_mut().send_all($args)?,
+        };
+        if rm == RespondMode::NotQuiet {
+            // unfortunately there isn't a better way rn.
+            // value chosen sorta random, 64 bytes should be enough for nearly all
+            // commands tho
+            let mut sent = Vec::with_capacity(64);
+            sent.write_fmt($args)?;
+            Ok(WrapperResponseHandle::Write(WriteResponseHandle::new(
+                $self.driver.clone(),
+                $self.address,
+                sent,
+            )))
         } else {
-            $self.driver.as_ref().borrow_mut().send_all($args)?;
+            Ok(WrapperResponseHandle::Dummy(DummyResponseHandle::new()))
         }
-        // unfortunately there isn't a better way rn.
-        // value chosen sorta random, 64 bytes should be enough for nearly all
-        // commands tho
-        let mut sent = Vec::with_capacity(64);
-        sent.write_fmt($args)?;
-        Ok(WriteResponseHandle::new(
-            $self.driver.clone(),
-            $self.address,
-            sent,
-        ))
     }};
 }
 
@@ -205,6 +218,11 @@ macro_rules! long_write {
 /// commands can be sent to different motors before having to wait for the
 /// responses. This reduces waittimes.
 ///
+/// To send commands to a motor in quick succession, the [`RespondMode`] can
+/// be set to [`Quiet`][RespondMode::Quiet] with [`set_respond_mode`][Motor::set_respond_mode].
+/// In this case the motor doesn't respond to commands. Be aware though that
+/// getters will panic. See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+///
 /// # Errors
 /// If a value doesn't match the specifications of the corresponding command
 /// in the manual, [`DriverError::InvalidArgument`] is returned. If the given motor
@@ -220,11 +238,15 @@ macro_rules! long_write {
 /// # Panics
 /// If this is the all-motor, i.e. the motor used to send commands to all motors,
 /// and a getter is called, the getter panics since it isn't possible to distinguish
-/// the answers from the motors
+/// the answers from the motors.\
+/// Also panics if a getter is called and the [`RespondMode`] is
+/// [`RespondMode::NotQuiet`] since it's impossible to get a value when there won't
+/// be a response
+/// (see also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)).
 ///
 /// # Examples
 /// ```no_run
-/// # use nanotec_stepper_driver::{Driver, ResponseHandle};
+/// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
 /// use std::time::Duration;
 /// use serialport;
 ///
@@ -233,7 +255,7 @@ macro_rules! long_write {
 ///     .open()
 ///     .unwrap();
 /// let mut driver = Driver::new(s);
-/// let mut m1 = driver.add_motor(1).unwrap();
+/// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 ///
 /// m1.load_record(3).unwrap().wait().unwrap();
 /// m1.set_continuation_record(0).unwrap().wait().unwrap();
@@ -248,7 +270,7 @@ macro_rules! long_write {
 /// ```
 /// Or sending multiple commands more or less at the same time:
 /// ```no_run
-/// # use nanotec_stepper_driver::{Driver, ResponseHandle};
+/// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
 /// use std::time::Duration;
 /// use serialport;
 ///
@@ -257,8 +279,8 @@ macro_rules! long_write {
 ///     .open()
 ///     .unwrap();
 /// let mut driver = Driver::new(s);
-/// let mut m1 = driver.add_motor(1).unwrap();
-/// let mut m2 = driver.add_motor(2).unwrap();
+/// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+/// let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
 ///
 /// let handle1 = m1.start_motor().unwrap();
 /// let handle2 = m2.start_motor().unwrap();
@@ -291,12 +313,15 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::LOAD_RECORD, n)
     }
 
-    // it's not possible to read the respondmode, but in the future it will
-    // be stored in the motor struct, since it will be needed there anyways
-    // then we can comment in this function again
-    // pub fn get_respond_mode(&mut self) -> Result<impl ResponseHandle<RespondMode>, DriverError> {
-    //     short_read!(self, map::READ_CURRENT_RECORD, RespondMode::parse)
-    // }
+    /// This method doesn't return a ResponseHandle since it doesn't actually send
+    /// a command from the motor but rather just returns a value stored within
+    /// this struct. See also [`set_respond_mode`][Motor::set_respond_mode]
+    pub fn get_respond_mode(&mut self) -> RespondMode {
+        self.driver
+            .as_ref()
+            .borrow()
+            .get_respond_mode(self.address.expect("Can only read from one motor"))
+    }
 
     /// See [`set_respond_mode`][Motor::set_respond_mode]
     pub fn get_current_record(&mut self) -> Result<impl ResponseHandle<Record>, DriverError> {
@@ -320,8 +345,8 @@ impl<I: Write + Read> Motor<I> {
     /// This command doesn't exist in the manual.
     /// [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
     /// was so convoluted that it was split into multiple functions, namely this
-    /// one, [`get_current_record`][Motor::get_current_record] and
-    /// [`get_record`][Motor::get_record].
+    /// one, [`get_current_record`][Motor::get_current_record],
+    /// [`get_record`][Motor::get_record] and [`get_respond_mode`][Motor::get_respond_mode].
     /// This function is responsible for setting whether or not the firmware
     /// responds to most commands and the other 2 are responsible for actually
     /// reading out records.
@@ -329,6 +354,11 @@ impl<I: Write + Read> Motor<I> {
         &mut self,
         mode: RespondMode,
     ) -> Result<impl ResponseHandle<()>, DriverError> {
+        if let Some(a) = self.address {
+            self.driver.as_ref().borrow_mut().set_respond_mode(a, mode);
+        } else {
+            self.driver.as_ref().borrow_mut().set_respond_mode_all(mode);
+        }
         short_write!(self, map::READ_CURRENT_RECORD, mode)
     }
 

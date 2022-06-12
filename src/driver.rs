@@ -4,7 +4,10 @@ pub mod motor;
 mod parse;
 pub mod responsehandle;
 
-use self::{cmd::Msg, motor::Motor};
+use self::{
+    cmd::{Msg, RespondMode},
+    motor::Motor,
+};
 use crate::util::ensure;
 use nom::Finish;
 use std::{
@@ -70,6 +73,7 @@ impl From<nom::error::Error<&[u8]>> for DriverError {
 #[derive(Debug)]
 struct InnerMotor {
     available: bool,
+    respond_mode: RespondMode,
     queue: VecDeque<Vec<u8>>,
 }
 
@@ -115,6 +119,22 @@ impl<I: Write + Read> InnerDriver<I> {
                 code: b.code,
             })?;
         Ok(msg)
+    }
+
+    pub fn get_respond_mode(&self, address: u8) -> RespondMode {
+        // shouldn't panic since it's only called from motor, where the address
+        // is definitely in the driver
+        self.motors.get(&address).unwrap().respond_mode
+    }
+
+    pub fn set_respond_mode(&mut self, address: u8, mode: RespondMode) {
+        // shouldn't panic since it's only called from motor, where the address
+        // is definitely in the driver
+        self.motors.get_mut(&address).unwrap().respond_mode = mode;
+    }
+
+    pub fn set_respond_mode_all(&mut self, mode: RespondMode) {
+        self.motors.values_mut().for_each(|m| m.respond_mode = mode);
     }
 
     pub fn receive_single(&mut self, address: u8) -> Result<Vec<u8>, DriverError> {
@@ -174,26 +194,44 @@ impl<I: Write + Read> InnerDriver<I> {
         Ok(self.all.pop_front().unwrap().1)
     }
 
-    pub fn send_single(&mut self, address: u8, args: Arguments<'_>) -> Result<(), DriverError> {
+    // send_single split in 2 functions cause there are cases like reading values
+    // where there will always be a response. this isn't the case with send_all
+    // since there only write functions are allowed
+    pub fn send_single_no_response(
+        &mut self,
+        address: u8,
+        args: Arguments<'_>,
+    ) -> Result<(), DriverError> {
         // if we are waiting for a response from all motors we can't send to
         // a singular motor because we don't know if it's ready yet. only when
         // all motors answered we can be sure
         ensure!(!self.is_waiting_all(), DriverError::NotAvailable);
         // shouldn't panic since the motor has to exist if a message was sent
         // to it
-        let imotor = self.motors.get_mut(&address).unwrap();
+        let imotor = self.motors.get(&address).unwrap();
         ensure!(imotor.available, DriverError::NotAvailable);
-        imotor.available = false;
-        write!(self.interface.get_mut(), "#{}{}\r", address, args).map_err(DriverError::from)
+        write!(self.interface.get_mut(), "#{}{}\r", address, args)?;
+        Ok(())
     }
 
-    pub fn send_all(&mut self, args: Arguments<'_>) -> Result<(), DriverError> {
+    pub fn send_single_with_response(
+        &mut self,
+        address: u8,
+        args: Arguments<'_>,
+    ) -> Result<(), DriverError> {
+        self.send_single_no_response(address, args)?;
+        self.motors.get_mut(&address).unwrap().available = false;
+        Ok(())
+    }
+
+    pub fn send_all(&mut self, args: Arguments<'_>) -> Result<RespondMode, DriverError> {
         // since messages to all motors shouldn't happen that often it can take
         // a bit longer. if it's a problem a semaphore would be a fix for it
         ensure!(
             self.motors.values().all(|m| m.available) && !self.is_waiting_all(),
             DriverError::NotAvailable
         );
+        // TODO optimise sending by not copying message 2 times
         // size chosen more or less randomly, should fit most messages
         let mut sent = Vec::with_capacity(64);
         write!(sent, "{}", args)?;
@@ -201,8 +239,17 @@ impl<I: Write + Read> InnerDriver<I> {
         iface.write_all(b"#*")?;
         iface.write_all(&sent)?;
         iface.write_all(b"\r")?;
-        self.all.push_back((self.motors.len() as u8, sent));
-        Ok(())
+        let res_cnt = self
+            .motors
+            .values()
+            .map(|m| m.respond_mode.is_responding() as u8)
+            .fold(0, std::ops::Add::add);
+        self.all.push_back((res_cnt, sent));
+        if res_cnt == 0 {
+            Ok(RespondMode::Quiet)
+        } else {
+            Ok(RespondMode::NotQuiet)
+        }
     }
 }
 
@@ -222,8 +269,6 @@ pub struct Driver<I: Write + Read> {
     inner: Rc<RefCell<InnerDriver<I>>>,
 }
 
-// TODO implement different respondmodes, also in motor, which would make
-// add_motor unsafe
 impl<I: Write + Read> Driver<I> {
     /// Returns new Driver. `I` is the interface used to actually communicate
     /// with the motors. Usually it's a serialport. Since the motors usually
@@ -256,7 +301,10 @@ impl<I: Write + Read> Driver<I> {
         }
     }
 
-    /// Returns a motor of the given address.
+    /// Returns a motor of the given address. `respond_mode` ist the respond mode
+    /// the motor is currently in (see also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D),
+    /// as well as [`RespondMode`]). If this is wrong an error might occur while
+    /// receiving the response. For more information see [`Motor`].
     ///
     /// A motor is removed from the driver simply by dropping it. See also
     /// [`Motor::drop`].
@@ -268,7 +316,7 @@ impl<I: Write + Read> Driver<I> {
     ///
     /// # Examples
     /// ```no_run
-    /// # use nanotec_stepper_driver::Driver;
+    /// # use nanotec_stepper_driver::{Driver, RespondMode};
     /// use std::time::Duration;
     /// use serialport;
     ///
@@ -277,9 +325,13 @@ impl<I: Write + Read> Driver<I> {
     ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
-    /// let mut m1 = driver.add_motor(1).unwrap();
+    /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     /// ```
-    pub fn add_motor(&mut self, address: u8) -> Result<Motor<I>, DriverError> {
+    pub fn add_motor(
+        &mut self,
+        address: u8,
+        respond_mode: RespondMode,
+    ) -> Result<Motor<I>, DriverError> {
         ensure!(
             address >= 1 && address <= 254,
             DriverError::InvalidAddress(address)
@@ -297,6 +349,7 @@ impl<I: Write + Read> Driver<I> {
                 address,
                 InnerMotor {
                     available: true,
+                    respond_mode,
                     queue: VecDeque::with_capacity(4),
                 },
             );
