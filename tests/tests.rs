@@ -145,3 +145,51 @@ fn all() {
     interface.add_read(b"*A\r");
     all.start_motor().unwrap().wait().unwrap();
 }
+
+#[test]
+fn quiet() {
+    let mut interface = Interface::new();
+    let mut driver = Driver::new(interface.clone());
+    let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+    let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
+    let mut all = driver.add_all_motor().unwrap();
+
+    interface.add_write(b"#*|0\r");
+    all.set_respond_mode(RespondMode::Quiet)
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    interface.add_write(b"#1s1337\r");
+    m1.set_travel_distance(1337).unwrap().wait().unwrap();
+    interface.add_write(b"#2s4269\r");
+    m2.set_travel_distance(4269).unwrap().wait().unwrap();
+
+    interface.add_write(b"#*p2\r");
+    all.set_positioning_mode(PositioningMode::Absolute)
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    interface.add_write(b"#2d1\r");
+    m2.set_rotation_direction(RotationDirection::Right)
+        .unwrap()
+        .wait()
+        .unwrap();
+    interface.add_write(b"#1d0\r");
+    m1.set_rotation_direction(RotationDirection::Left)
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    interface.add_cmd_echo(b"#*|1\r");
+    interface.add_read(b"*|1\r");
+    all.set_respond_mode(RespondMode::NotQuiet)
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    interface.add_cmd_echo(b"#*A\r");
+    interface.add_read(b"*A\r");
+    all.start_motor().unwrap().wait().unwrap();
+}
