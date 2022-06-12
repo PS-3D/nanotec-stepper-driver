@@ -231,20 +231,25 @@ impl<I: Write + Read> InnerDriver<I> {
             self.motors.values().all(|m| m.available) && !self.is_waiting_all(),
             DriverError::NotAvailable
         );
-        // TODO optimise sending by not copying message 2 times
-        // size chosen more or less randomly, should fit most messages
-        let mut sent = Vec::with_capacity(64);
-        write!(sent, "{}", args)?;
-        let iface = self.interface.get_mut();
-        iface.write_all(b"#*")?;
-        iface.write_all(&sent)?;
-        iface.write_all(b"\r")?;
         let res_cnt = self
             .motors
             .values()
             .map(|m| m.respond_mode.is_responding() as u8)
             .fold(0, std::ops::Add::add);
-        self.all.push_back((res_cnt, sent));
+        // TODO optimise sending by not copying message 2 times
+        // size chosen more or less randomly, should fit most messages
+        let iface = self.interface.get_mut();
+        iface.write_all(b"#*")?;
+        // if we gotta wait, we need to save what we sent, otherwise not
+        if res_cnt > 0 {
+            let mut sent = Vec::with_capacity(64);
+            write!(sent, "{}", args)?;
+            iface.write_all(&sent)?;
+            self.all.push_back((res_cnt, sent));
+        } else {
+            iface.write_fmt(args)?;
+        }
+        iface.write_all(b"\r")?;
         if res_cnt == 0 {
             Ok(RespondMode::Quiet)
         } else {
