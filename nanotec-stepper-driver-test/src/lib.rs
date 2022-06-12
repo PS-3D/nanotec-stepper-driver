@@ -17,6 +17,7 @@ use std::{
 // don't be alarmed if you think it's slow or inefficient or anything, it doesn't
 // need to be fast nor pretty nor efficient, its just for testing. it needs to be
 // easy
+#[derive(Debug)]
 pub struct Interface {
     read: Rc<RefCell<Vec<u8>>>,
     write: Rc<RefCell<Vec<u8>>>,
@@ -33,7 +34,7 @@ impl Read for Interface {
             q.drain(..);
             Ok(res)
         } else {
-            buf.write_all(&q[..buf.len()])?;
+            buf.copy_from_slice(&q[..buf.len()]);
             q.drain(..buf.len());
             Ok(buf.len())
         }
