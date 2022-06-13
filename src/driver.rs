@@ -3,6 +3,8 @@ mod map;
 pub mod motor;
 mod parse;
 pub mod responsehandle;
+#[cfg(test)]
+mod tests;
 
 use self::{
     cmd::{Msg, RespondMode},

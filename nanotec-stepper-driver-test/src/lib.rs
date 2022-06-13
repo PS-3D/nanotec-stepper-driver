@@ -87,4 +87,8 @@ impl Interface {
         self.add_read(&buf[1..]);
         self.add_write(buf);
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.read.borrow().is_empty() && self.write.borrow().is_empty()
+    }
 }
