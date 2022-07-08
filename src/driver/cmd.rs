@@ -210,6 +210,25 @@ impl Display for LimitSwitchBehavior {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
+pub enum ErrorCorrectionMode {
+    Off,
+    AfterTravel,
+    DuringTravel,
+}
+
+impl ErrorCorrectionMode {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        parse_enum_value(s, parse_su8, Self::from_u8)
+    }
+}
+
+impl Display for ErrorCorrectionMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorError {
     LowVoltage = 0x1,
     Temperature,

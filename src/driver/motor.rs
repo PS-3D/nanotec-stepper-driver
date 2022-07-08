@@ -1,7 +1,7 @@
 use super::{
     cmd::{
-        BaudRate, FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop, MotorType,
-        PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
+        BaudRate, ErrorCorrectionMode, FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop,
+        MotorType, PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
     responsehandle::{
@@ -393,7 +393,18 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::LIMIT_SWITCH_BEHAVIOR, l)
     }
 
-    // TODO error correction mode
+    pub fn get_error_correction_mode(
+        &mut self,
+    ) -> DResult<impl ResponseHandle<ErrorCorrectionMode>> {
+        short_read!(self, map::ERROR_CORRECTION_MODE, ErrorCorrectionMode::parse)
+    }
+
+    pub fn set_error_correction_mode(
+        &mut self,
+        m: ErrorCorrectionMode,
+    ) -> DResult<impl ResponseHandle<()>> {
+        short_write!(self, map::ERROR_CORRECTION_MODE, m)
+    }
 
     pub fn get_auto_correction_record(&mut self) -> DResult<impl ResponseHandle<u8>> {
         short_read!(self, map::AUTO_CORRECTION_RECORD, parse_u8)
@@ -474,6 +485,8 @@ impl<I: Write + Read> Motor<I> {
     pub fn is_motor_referenced(&mut self) -> DResult<impl ResponseHandle<bool>> {
         long_read!(self, map::IS_REFERENCED, parse_u8.map(|n| n == 1))
     }
+
+    // TODO reading out status
 
     pub fn get_firmware_version(&mut self) -> DResult<impl ResponseHandle<FirmwareVersion>> {
         short_read!(self, map::READ_FIRMWARE_VERSION, FirmwareVersion::parse)
