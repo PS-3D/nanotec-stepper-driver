@@ -1,7 +1,7 @@
 use super::{
     cmd::{
-        BaudRate, FirmwareVersion, MotorStop, MotorType, PositioningMode, RampType, Record,
-        RespondMode, RotationDirection, StepMode,
+        BaudRate, FirmwareVersion, LimitSwitchBehavior, MotorStop, MotorType, PositioningMode,
+        RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
     responsehandle::{
@@ -380,7 +380,19 @@ impl<I: Write + Read> Motor<I> {
         long_write!(self, map::MOTOR_ID, id)
     }
 
-    // TODO limit switch behavior
+    pub fn get_limit_switch_behavior(
+        &mut self,
+    ) -> DResult<impl ResponseHandle<LimitSwitchBehavior>> {
+        short_read!(self, map::LIMIT_SWITCH_BEHAVIOR, LimitSwitchBehavior::parse)
+    }
+
+    pub fn set_limit_switch_behavior(
+        &mut self,
+        l: LimitSwitchBehavior,
+    ) -> DResult<impl ResponseHandle<()>> {
+        short_write!(self, map::LIMIT_SWITCH_BEHAVIOR, l)
+    }
+
     // TODO error correction mode
 
     pub fn get_auto_correction_record(&mut self) -> DResult<impl ResponseHandle<u8>> {

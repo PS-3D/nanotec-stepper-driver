@@ -113,6 +113,103 @@ impl Display for StepMode {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum LimitSwitchBehaviorReference {
+    FreeTravelForwards,
+    FreeTravelBackwards,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum LimitSwitchBehaviorNormal {
+    FreeTravelForwards,
+    FreeTravelBackwards,
+    Stop,
+    Ignore,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct LimitSwitchBehavior {
+    pub internal_reference: LimitSwitchBehaviorReference,
+    pub internal_normal: LimitSwitchBehaviorNormal,
+    pub external_reference: LimitSwitchBehaviorReference,
+    pub external_normal: LimitSwitchBehaviorNormal,
+}
+
+impl LimitSwitchBehavior {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        let (rem, res) = parse_su32(s)?;
+        if let Some(l) = Self::from_u32(res) {
+            Ok((rem, l))
+        } else {
+            Err(nom::Err::Error(nom::error::ParseError::from_error_kind(
+                s,
+                // idk, for lack of some better ErrorKind its just fail
+                nom::error::ErrorKind::Fail,
+            )))
+        }
+    }
+
+    pub fn from_u32(b: u32) -> Option<Self> {
+        fn reference(b: u32) -> Option<LimitSwitchBehaviorReference> {
+            match b & 0x3 {
+                0x1 => Some(LimitSwitchBehaviorReference::FreeTravelForwards),
+                0x2 => Some(LimitSwitchBehaviorReference::FreeTravelBackwards),
+                _ => None,
+            }
+        }
+        fn normal(b: u32) -> Option<LimitSwitchBehaviorNormal> {
+            match b & 0xf {
+                0x1 => Some(LimitSwitchBehaviorNormal::FreeTravelForwards),
+                0x2 => Some(LimitSwitchBehaviorNormal::FreeTravelBackwards),
+                0x4 => Some(LimitSwitchBehaviorNormal::Stop),
+                0x8 => Some(LimitSwitchBehaviorNormal::Ignore),
+                _ => None,
+            }
+        }
+        Some(Self {
+            internal_reference: reference(b)?,
+            internal_normal: normal(b >> 2)?,
+            external_reference: reference(b >> 8)?,
+            external_normal: normal(b >> 10)?,
+        })
+    }
+}
+
+impl From<LimitSwitchBehavior> for u32 {
+    fn from(l: LimitSwitchBehavior) -> Self {
+        fn reference(b: LimitSwitchBehaviorReference) -> u32 {
+            match b {
+                LimitSwitchBehaviorReference::FreeTravelForwards => 0x1,
+                LimitSwitchBehaviorReference::FreeTravelBackwards => 0x2,
+            }
+        }
+        fn normal(b: LimitSwitchBehaviorNormal) -> u32 {
+            match b {
+                LimitSwitchBehaviorNormal::FreeTravelForwards => 0x1,
+                LimitSwitchBehaviorNormal::FreeTravelBackwards => 0x2,
+                LimitSwitchBehaviorNormal::Stop => 0x4,
+                LimitSwitchBehaviorNormal::Ignore => 0x8,
+            }
+        }
+        reference(l.internal_reference)
+            | (normal(l.internal_normal) << 2)
+            | (reference(l.external_reference) << 8)
+            | (normal(l.external_normal) << 10)
+    }
+}
+
+impl From<u32> for LimitSwitchBehavior {
+    fn from(b: u32) -> Self {
+        Self::from_u32(b).unwrap()
+    }
+}
+
+impl Display for LimitSwitchBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", u32::from(*self))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum HardwareType {
     SMCI47_S,

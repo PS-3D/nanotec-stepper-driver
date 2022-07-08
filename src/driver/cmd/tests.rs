@@ -2,8 +2,9 @@ use chrono::naive::NaiveDate;
 use nom::Finish;
 
 use super::{
-    CommunicationType, FirmwareVersion, HardwareType, MotorStop, MotorType, Msg, PositioningMode,
-    Record, RespondMode, RotationDirection,
+    CommunicationType, FirmwareVersion, HardwareType, LimitSwitchBehavior,
+    LimitSwitchBehaviorNormal, LimitSwitchBehaviorReference, MotorStop, MotorType, Msg,
+    PositioningMode, Record, RespondMode, RotationDirection,
 };
 
 #[test]
@@ -23,6 +24,25 @@ fn motortype_parse_oob() {
 #[should_panic]
 fn motortype_parse_garbage() {
     let (_, _) = MotorType::parse(b"asdf").finish().unwrap();
+}
+
+#[test]
+fn limitswitchbehavior_parse() {
+    let (_, l) = LimitSwitchBehavior::parse(b"+8721").finish().unwrap();
+    let expected = LimitSwitchBehavior {
+        internal_reference: LimitSwitchBehaviorReference::FreeTravelForwards,
+        internal_normal: LimitSwitchBehaviorNormal::Stop,
+        external_reference: LimitSwitchBehaviorReference::FreeTravelBackwards,
+        external_normal: LimitSwitchBehaviorNormal::Ignore,
+    };
+    assert_eq!(expected, l)
+}
+
+#[test]
+#[should_panic]
+fn limitswitchbehavior_multiple() {
+    // For Internal normal Forwards and stop are set
+    let (_, _) = LimitSwitchBehavior::parse(b"+8725").finish().unwrap();
 }
 
 #[test]
