@@ -516,7 +516,14 @@ impl<I: Write + Read> Motor<I> {
         )
     }
 
-    // TODO set quickstop ramp
+    pub fn get_quickstop_ramp(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        short_read!(self, map::QUICKSTOP_RAMP, parse_u16)
+    }
+
+    pub fn set_quickstop_ramp(&mut self, s: u16) -> DResult<impl ResponseHandle<()>> {
+        ensure!(s <= 8000, DriverError::InvalidArgument);
+        short_write!(self, map::QUICKSTOP_RAMP, s)
+    }
 
     pub fn get_quickstop_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
         long_read!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, parse_u32)
