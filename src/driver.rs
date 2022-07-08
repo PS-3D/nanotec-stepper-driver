@@ -86,7 +86,7 @@ struct InnerDriver<I: Write + Read> {
     // the u8 basically acts like a semaphore, once it reaches 0 we know we
     // received answers from all motors. it is initialized to the current motor
     // count in send_all
-    all: VecDeque<(u8, Vec<u8>)>,
+    all: Option<(u8, Vec<u8>)>,
     all_exists: bool,
     motors: HashMap<u8, InnerMotor>,
 }
@@ -105,7 +105,7 @@ impl<I: Write + Read> InnerDriver<I> {
     // check if the driver is currently waiting for replies to a command for all
     // motors
     fn is_waiting_all(&self) -> bool {
-        self.all.back().map_or(false, |(s, _)| *s != 0)
+        self.all.as_ref().map_or(false, |a| a.0 != 0)
     }
 
     // receives a single msg from the interface and parses it into a Msg
@@ -139,6 +139,7 @@ impl<I: Write + Read> InnerDriver<I> {
         self.motors.values_mut().for_each(|m| m.respond_mode = mode);
     }
 
+    // TODO error out if cmd for other motor is received and that motor wasn't waiting?
     pub fn receive_single(&mut self, address: u8) -> Result<Vec<u8>, DriverError> {
         // if there's one already in the buffer, return that
         // shouldn't panic because this shouldn't get called on an address that
@@ -173,27 +174,26 @@ impl<I: Write + Read> InnerDriver<I> {
     }
 
     pub fn receive_all(&mut self) -> Result<Vec<u8>, DriverError> {
-        // if receive all has been called there should always at least be one
-        // front entry
-        if self.all.front().unwrap().0 != 0 {
+        if self.is_waiting_all() {
             // if we're waiting for a response from all motors, there shouldn't
             // be a response from one with a singular address so we can massively
             // simplify the receiving process
-            for _ in 0..self.all.front().unwrap().0 {
+            for _ in 0..self.all.as_ref().unwrap().0 {
                 let msg = self.receive_msg()?;
                 ensure!(
                     msg.address.is_none(),
                     DriverError::UnexpectedResponse(msg.address.unwrap())
                 );
-                let front = self.all.front_mut().unwrap();
+                // if were receiving there should be something in there
+                let all = self.all.as_mut().unwrap();
                 ensure!(
-                    msg.payload == front.1,
+                    msg.payload == all.1,
                     DriverError::NonMatchingPayloads(msg.payload)
                 );
-                front.0 -= 1;
+                all.0 -= 1;
             }
         }
-        Ok(self.all.pop_front().unwrap().1)
+        Ok(self.all.take().unwrap().1)
     }
 
     // send_single split in 2 functions cause there are cases like reading values
@@ -247,7 +247,7 @@ impl<I: Write + Read> InnerDriver<I> {
             let mut sent = Vec::with_capacity(64);
             write!(sent, "{}", args)?;
             iface.write_all(&sent)?;
-            self.all.push_back((res_cnt, sent));
+            self.all = Some((res_cnt, sent));
         } else {
             iface.write_fmt(args)?;
         }
@@ -300,7 +300,7 @@ impl<I: Write + Read> Driver<I> {
                 // wrap into bufreader so receiving until '\r' is easier
                 interface: BufReader::new(interface),
                 // chosen more or less arbitrarily
-                all: VecDeque::with_capacity(8),
+                all: None,
                 all_exists: false,
                 // maximium number of motors
                 motors: HashMap::with_capacity(254),

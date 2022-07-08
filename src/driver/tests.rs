@@ -77,13 +77,13 @@ fn receive_all() {
     let mut inner = driver.inner.borrow_mut();
     interface.add_read(b"*A\r");
     interface.add_read(b"*A\r");
-    inner.all.push_back((2, b"A".to_vec()));
+    inner.all = Some((2, b"A".to_vec()));
 
     let r = inner.receive_all().unwrap();
 
     assert!(interface.is_empty());
     assert_eq!(&r, b"A");
-    assert!(inner.all.is_empty());
+    assert!(inner.all.is_none());
 }
 
 #[test]
@@ -92,15 +92,14 @@ fn receive_all_single() {
     let driver = Driver::new(interface.clone());
     let mut inner = driver.inner.borrow_mut();
     interface.add_read(b"1A\r");
-    inner.all.push_back((1, b"A".to_vec()));
+    inner.all = Some((1, b"A".to_vec()));
 
     let r = inner.receive_all();
 
     assert!(matches!(r, Err(DriverError::UnexpectedResponse(1))));
     assert!(interface.is_empty());
-    assert_eq!(inner.all.len(), 1);
-    assert_eq!(inner.all.back().unwrap().0, 1);
-    assert_eq!(inner.all.back().unwrap().1, b"A".to_vec());
+    assert_eq!(inner.all.as_ref().unwrap().0, 1);
+    assert_eq!(inner.all.as_ref().unwrap().1, b"A".to_vec());
 }
 
 #[test]
@@ -121,7 +120,7 @@ fn send_single_no_response_waiting_all() {
     let interface = Interface::new();
     let driver = Driver::new(interface.clone());
     let mut inner = driver.inner.borrow_mut();
-    inner.all.push_back((1, b"A".to_vec()));
+    inner.all = Some((1, b"A".to_vec()));
 
     let r = inner.send_single_no_response(1, format_args!("test"));
 
@@ -162,7 +161,7 @@ fn send_single_with_response_waiting_all() {
     let interface = Interface::new();
     let driver = Driver::new(interface.clone());
     let mut inner = driver.inner.borrow_mut();
-    inner.all.push_back((1, b"A".to_vec()));
+    inner.all = Some((1, b"A".to_vec()));
 
     let r = inner.send_single_with_response(1, format_args!("test"));
 
@@ -195,9 +194,8 @@ fn send_all_not_quiet() {
     let r = inner.send_all(format_args!("A")).unwrap();
 
     assert_eq!(r, RespondMode::NotQuiet);
-    assert_eq!(inner.all.len(), 1);
-    assert_eq!(inner.all.back().unwrap().0, 1);
-    assert_eq!(inner.all.back().unwrap().1, b"A".to_vec());
+    assert_eq!(inner.all.as_ref().unwrap().0, 1);
+    assert_eq!(inner.all.as_ref().unwrap().1, b"A".to_vec());
 }
 
 #[test]
@@ -211,7 +209,7 @@ fn send_all_quiet() {
     let r = inner.send_all(format_args!("A")).unwrap();
 
     assert_eq!(r, RespondMode::Quiet);
-    assert_eq!(inner.all.len(), 0);
+    assert!(inner.all.is_none());
 }
 
 #[test]
@@ -226,7 +224,7 @@ fn send_all_waiting() {
     let r = inner.send_all(format_args!("test"));
 
     assert!(matches!(r, Err(DriverError::NotAvailable)));
-    assert!(inner.all.is_empty());
+    assert!(inner.all.is_none());
 }
 
 #[test]
@@ -234,7 +232,7 @@ fn send_all_all_waiting() {
     let interface = Interface::new();
     let driver = Driver::new(interface);
     let mut inner = driver.inner.borrow_mut();
-    inner.all.push_back((1, b"test".to_vec()));
+    inner.all = Some((1, b"test".to_vec()));
 
     let r = inner.send_all(format_args!("test"));
 
@@ -294,7 +292,7 @@ fn add_all_motor() {
 
     let inner = driver.inner.borrow();
     assert!(inner.all_exists);
-    assert!(inner.all.is_empty());
+    assert!(inner.all.is_none());
 }
 
 #[test]
