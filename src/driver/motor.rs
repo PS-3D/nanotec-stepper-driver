@@ -1,6 +1,7 @@
 use super::{
     cmd::{
-        MotorStop, MotorType, PositioningMode, Record, RespondMode, RotationDirection, StepMode,
+        BaudRate, MotorStop, MotorType, PositioningMode, Record, RespondMode, RotationDirection,
+        StepMode,
     },
     map,
     responsehandle::{
@@ -495,7 +496,14 @@ impl<I: Write + Read> Motor<I> {
         long_write!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, t)
     }
 
-    // TODO set baud rate
+    pub fn get_baud_rate(&mut self) -> DResult<impl ResponseHandle<BaudRate>> {
+        long_read!(self, map::BAUD_RATE, BaudRate::parse)
+    }
+
+    pub fn set_baud_rate(&mut self, br: BaudRate) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::BAUD_RATE, br)
+    }
+
     // TODO set crc checksum
     // TODO set hall config
 
