@@ -451,8 +451,14 @@ impl<I: Write + Read> Motor<I> {
     }
 
     // TODO read out error memory
-    // TODO read out encoder position
-    // TODO read out position
+
+    pub fn get_encoder_position(&mut self) -> DResult<impl ResponseHandle<i32>> {
+        short_read!(self, map::READ_ENCODER_POS, parse_i32)
+    }
+
+    pub fn get_position(&mut self) -> DResult<impl ResponseHandle<i32>> {
+        short_read!(self, map::READ_POS, parse_i32)
+    }
 
     pub fn is_motor_referenced(&mut self) -> DResult<impl ResponseHandle<bool>> {
         long_read!(self, map::IS_REFERENCED, parse_u8.map(|n| n == 1))
