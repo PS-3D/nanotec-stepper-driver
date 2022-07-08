@@ -20,6 +20,8 @@ use std::{
     rc::Rc,
 };
 
+type DResult<T> = Result<T, DriverError>;
+
 // sends read command to motor
 // in theory a read command isn't diffrent than a write command, the
 // difference is in the returned responsehandle.
@@ -295,20 +297,22 @@ pub struct Motor<I: Write + Read> {
     address: Option<u8>,
 }
 
+// DResult<impl ResponseHandle<T>> is not an alias since aliases with
+// impl aren't supported yet
 impl<I: Write + Read> Motor<I> {
     pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: Option<u8>) -> Self {
         Motor { driver, address }
     }
 
-    pub fn start_motor(&mut self) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::START_MOTOR, "")
     }
 
-    pub fn stop_motor(&mut self, stop: MotorStop) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn stop_motor(&mut self, stop: MotorStop) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::STOP_MOTOR, stop)
     }
 
-    pub fn load_record(&mut self, n: u8) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn load_record(&mut self, n: u8) -> DResult<impl ResponseHandle<()>> {
         ensure!(n >= 1 && n <= 32, DriverError::InvalidArgument);
         short_write!(self, map::LOAD_RECORD, n)
     }
@@ -324,7 +328,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     /// See [`set_respond_mode`][Motor::set_respond_mode]
-    pub fn get_current_record(&mut self) -> Result<impl ResponseHandle<Record>, DriverError> {
+    pub fn get_current_record(&mut self) -> DResult<impl ResponseHandle<Record>> {
         read!(
             self,
             preceded(tag(map::READ), Record::parse),
@@ -333,7 +337,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     /// See [`set_respond_mode`][Motor::set_respond_mode]
-    pub fn get_record(&mut self, n: u8) -> Result<impl ResponseHandle<Record>, DriverError> {
+    pub fn get_record(&mut self, n: u8) -> DResult<impl ResponseHandle<Record>> {
         ensure!(n <= 32, DriverError::InvalidArgument);
         read!(
             self,
@@ -350,10 +354,7 @@ impl<I: Write + Read> Motor<I> {
     /// This function is responsible for setting whether or not the firmware
     /// responds to most commands and the other 2 are responsible for actually
     /// reading out records.
-    pub fn set_respond_mode(
-        &mut self,
-        mode: RespondMode,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_respond_mode(&mut self, mode: RespondMode) -> DResult<impl ResponseHandle<()>> {
         if let Some(a) = self.address {
             self.driver.as_ref().borrow_mut().set_respond_mode(a, mode);
         } else {
@@ -362,32 +363,27 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::READ_CURRENT_RECORD, mode)
     }
 
-    pub fn save_record(&mut self, n: u8) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn save_record(&mut self, n: u8) -> DResult<impl ResponseHandle<()>> {
         ensure!(n >= 1 && n <= 32, DriverError::InvalidArgument);
         short_write!(self, map::SAVE_RECORD, n)
     }
 
-    pub fn get_positioning_mode(
-        &mut self,
-    ) -> Result<impl ResponseHandle<PositioningMode>, DriverError> {
+    pub fn get_positioning_mode(&mut self) -> DResult<impl ResponseHandle<PositioningMode>> {
         short_read!(self, map::POSITIONING_MODE, PositioningMode::parse)
     }
 
     pub fn set_positioning_mode(
         &mut self,
         mode: PositioningMode,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    ) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::POSITIONING_MODE, mode)
     }
 
-    pub fn get_travel_distance(&mut self) -> Result<impl ResponseHandle<i32>, DriverError> {
+    pub fn get_travel_distance(&mut self) -> DResult<impl ResponseHandle<i32>> {
         short_read!(self, map::TRAVEL_DISTANCE, parse_i32)
     }
 
-    pub fn set_travel_distance(
-        &mut self,
-        distance: i32,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_travel_distance(&mut self, distance: i32) -> DResult<impl ResponseHandle<()>> {
         ensure!(
             distance >= -100_000_000 && distance <= 100_000_000,
             DriverError::InvalidArgument
@@ -395,14 +391,11 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::TRAVEL_DISTANCE, distance)
     }
 
-    pub fn get_min_frequency(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_min_frequency(&mut self) -> DResult<impl ResponseHandle<u32>> {
         short_read!(self, map::MIN_FREQUENCY, parse_u32)
     }
 
-    pub fn set_min_frequency(
-        &mut self,
-        frequency: u32,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_min_frequency(&mut self, frequency: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(
             frequency >= 1 && frequency <= 160_000,
             DriverError::InvalidArgument
@@ -410,14 +403,11 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::MIN_FREQUENCY, frequency)
     }
 
-    pub fn get_max_frequency(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_max_frequency(&mut self) -> DResult<impl ResponseHandle<u32>> {
         short_read!(self, map::MAX_FREQUENCY, parse_u32)
     }
 
-    pub fn set_max_frequency(
-        &mut self,
-        frequency: u32,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_max_frequency(&mut self, frequency: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(
             frequency >= 1 && frequency <= 1_000_000,
             DriverError::InvalidArgument
@@ -425,14 +415,11 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::MAX_FREQUENCY, frequency)
     }
 
-    pub fn get_max_frequency2(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_max_frequency2(&mut self) -> DResult<impl ResponseHandle<u32>> {
         short_read!(self, map::MAX_FREQUENCY2, parse_u32)
     }
 
-    pub fn set_max_frequency2(
-        &mut self,
-        frequency: u32,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_max_frequency2(&mut self, frequency: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(
             frequency >= 1 && frequency <= 1_000_000,
             DriverError::InvalidArgument
@@ -440,67 +427,53 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::MAX_FREQUENCY2, frequency)
     }
 
-    pub fn get_accel_ramp(&mut self) -> Result<impl ResponseHandle<u16>, DriverError> {
+    pub fn get_accel_ramp(&mut self) -> DResult<impl ResponseHandle<u16>> {
         short_read!(self, map::ACCEL_RAMP, parse_u16)
     }
 
-    pub fn set_accel_ramp(&mut self, n: u16) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_accel_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<()>> {
         ensure!(n >= 1, DriverError::InvalidArgument);
         short_write!(self, map::ACCEL_RAMP, n)
     }
 
-    pub fn get_accel_ramp_no_conversion(
-        &mut self,
-    ) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_accel_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
         long_read!(self, map::ACCEL_RAMP_NO_CONVERSION, parse_u32)
     }
 
-    pub fn set_accel_ramp_no_conversion(
-        &mut self,
-        n: u32,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_accel_ramp_no_conversion(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(n >= 1 && n <= 3_000_000, DriverError::InvalidArgument);
         long_write!(self, map::ACCEL_RAMP_NO_CONVERSION, n)
     }
 
-    pub fn get_brake_ramp(&mut self) -> Result<impl ResponseHandle<u16>, DriverError> {
+    pub fn get_brake_ramp(&mut self) -> DResult<impl ResponseHandle<u16>> {
         short_read!(self, map::BRAKE_RAMP, parse_u16)
     }
 
-    pub fn set_brake_ramp(&mut self, n: u16) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_brake_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::BRAKE_RAMP, n)
     }
 
-    pub fn get_brake_ramp_no_conversion(
-        &mut self,
-    ) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_brake_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
         long_read!(self, map::BRAKE_RAMP_NO_CONVERSION, parse_u32)
     }
 
-    pub fn set_brake_ramp_no_conversion(
-        &mut self,
-        n: u32,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_brake_ramp_no_conversion(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(n <= 3_000_000, DriverError::InvalidArgument);
         long_write!(self, map::BRAKE_RAMP_NO_CONVERSION, n)
     }
 
-    pub fn get_rotation_direction(
-        &mut self,
-    ) -> Result<impl ResponseHandle<RotationDirection>, DriverError> {
+    pub fn get_rotation_direction(&mut self) -> DResult<impl ResponseHandle<RotationDirection>> {
         short_read!(self, map::ROTATION_DIRECTION, RotationDirection::parse)
     }
 
     pub fn set_rotation_direction(
         &mut self,
         direction: RotationDirection,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    ) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::ROTATION_DIRECTION, direction)
     }
 
-    pub fn get_rotation_direction_change(
-        &mut self,
-    ) -> Result<impl ResponseHandle<bool>, DriverError> {
+    pub fn get_rotation_direction_change(&mut self) -> DResult<impl ResponseHandle<bool>> {
         short_read!(
             self,
             map::ROTATION_DIRECTION_CHANGE,
@@ -511,55 +484,52 @@ impl<I: Write + Read> Motor<I> {
     pub fn set_rotation_direction_change(
         &mut self,
         change: bool,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    ) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::ROTATION_DIRECTION_CHANGE, change as u8)
     }
 
     // TODO maybe work out better type since 0 means endless
-    pub fn get_repetitions(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_repetitions(&mut self) -> DResult<impl ResponseHandle<u32>> {
         short_read!(self, map::REPETITIONS, parse_u32)
     }
 
-    pub fn set_repetitions(&mut self, n: u32) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_repetitions(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(n <= 254, DriverError::InvalidArgument);
         short_write!(self, map::REPETITIONS, n)
     }
 
-    pub fn get_record_pause(&mut self) -> Result<impl ResponseHandle<u16>, DriverError> {
+    pub fn get_record_pause(&mut self) -> DResult<impl ResponseHandle<u16>> {
         short_read!(self, map::RECORD_PAUSE, parse_u16)
     }
 
-    pub fn set_record_pause(&mut self, n: u16) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_record_pause(&mut self, n: u16) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::RECORD_PAUSE, n)
     }
 
-    pub fn get_continuation_record(&mut self) -> Result<impl ResponseHandle<u8>, DriverError> {
+    pub fn get_continuation_record(&mut self) -> DResult<impl ResponseHandle<u8>> {
         short_read!(self, map::CONTINUATION_RECORD, parse_u8)
     }
 
     // TODO make option for no continuation record
-    pub fn set_continuation_record(
-        &mut self,
-        n: u8,
-    ) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_continuation_record(&mut self, n: u8) -> DResult<impl ResponseHandle<()>> {
         ensure!(n <= 32, DriverError::InvalidArgument);
         short_write!(self, map::CONTINUATION_RECORD, n)
     }
 
-    pub fn get_max_accel_jerk(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_max_accel_jerk(&mut self) -> DResult<impl ResponseHandle<u32>> {
         short_read!(self, map::MAX_ACCEL_JERK, parse_u32)
     }
 
-    pub fn set_max_accel_jerk(&mut self, n: u32) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_max_accel_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(n >= 1 && n <= 100_000_000, DriverError::InvalidArgument);
         short_write!(self, map::MAX_ACCEL_JERK, n)
     }
 
-    pub fn get_max_brake_jerk(&mut self) -> Result<impl ResponseHandle<u32>, DriverError> {
+    pub fn get_max_brake_jerk(&mut self) -> DResult<impl ResponseHandle<u32>> {
         short_read!(self, map::MAX_BRAKE_JERK, parse_u32)
     }
 
-    pub fn set_max_brake_jerk(&mut self, n: u32) -> Result<impl ResponseHandle<()>, DriverError> {
+    pub fn set_max_brake_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
         ensure!(n >= 1 && n <= 100_000_000, DriverError::InvalidArgument);
         short_write!(self, map::MAX_BRAKE_JERK, n)
     }
