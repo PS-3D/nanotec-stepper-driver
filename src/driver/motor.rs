@@ -1,7 +1,7 @@
 use super::{
     cmd::{
-        BaudRate, FirmwareVersion, LimitSwitchBehavior, MotorStop, MotorType, PositioningMode,
-        RampType, Record, RespondMode, RotationDirection, StepMode,
+        BaudRate, FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop, MotorType,
+        PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
     responsehandle::{
@@ -450,7 +450,18 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::RESET_POS_ERR, p)
     }
 
-    // TODO read out error memory
+    pub fn get_error(&mut self, p: u8) -> DResult<impl ResponseHandle<MotorError>> {
+        ensure!(p <= 32, DriverError::InvalidArgument);
+        // FIXME concrete value instead of just u8
+        read!(
+            self,
+            preceded(
+                tuple((tag(map::READ), parse_u8, tag(map::READ_ERR_MEM))),
+                MotorError::parse
+            ),
+            format_args!("{}{}{}", map::READ, p, map::READ_ERR_MEM)
+        )
+    }
 
     pub fn get_encoder_position(&mut self) -> DResult<impl ResponseHandle<i32>> {
         short_read!(self, map::READ_ENCODER_POS, parse_i32)
@@ -649,6 +660,7 @@ impl<I: Write + Read> Motor<I> {
         ensure!(n <= 32, DriverError::InvalidArgument);
         read!(
             self,
+            // FIXME concrete value instead of just parse_u8
             preceded(tuple((tag(map::READ), parse_u8)), Record::parse),
             format_args!("{}{}{}", map::READ, n, map::READ_CURRENT_RECORD)
         )

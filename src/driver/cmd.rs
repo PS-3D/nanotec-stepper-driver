@@ -209,6 +209,29 @@ impl Display for LimitSwitchBehavior {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
+pub enum MotorError {
+    LowVoltage = 0x1,
+    Temperature,
+    TMC = 0x4,
+    EE = 0x8,
+    QEI = 0x10,
+    Internal = 0x20,
+    Driver = 0x80,
+}
+
+impl MotorError {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        parse_enum_value(s, parse_su8, Self::from_u8)
+    }
+}
+
+impl Display for MotorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum HardwareType {
