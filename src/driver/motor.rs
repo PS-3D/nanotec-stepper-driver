@@ -1,5 +1,5 @@
 use super::{
-    cmd::{MotorStop, PositioningMode, Record, RespondMode, RotationDirection},
+    cmd::{MotorStop, MotorType, PositioningMode, Record, RespondMode, RotationDirection},
     map,
     responsehandle::{
         DummyResponseHandle, ReadResponseHandle, ResponseHandle, WrapperResponseHandle,
@@ -302,6 +302,220 @@ pub struct Motor<I: Write + Read> {
 impl<I: Write + Read> Motor<I> {
     pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: Option<u8>) -> Self {
         Motor { driver, address }
+    }
+
+    pub fn get_motor_type(&mut self) -> DResult<impl ResponseHandle<MotorType>> {
+        long_read!(self, map::MOTOR_TYPE, MotorType::parse)
+    }
+
+    pub fn set_motor_type(&mut self, t: MotorType) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::MOTOR_TYPE, t)
+    }
+
+    pub fn get_phase_current(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::PHASE_CURRENT, parse_u8)
+    }
+
+    pub fn set_phase_current(&mut self, c: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(c <= 150, DriverError::InvalidArgument);
+        short_write!(self, map::PHASE_CURRENT, c)
+    }
+
+    pub fn get_standstill_phase_current(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::STANDSTILL_PHASE_CURRENT, parse_u8)
+    }
+
+    pub fn set_standstill_phase_current(&mut self, c: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(c <= 150, DriverError::InvalidArgument);
+        short_write!(self, map::STANDSTILL_PHASE_CURRENT, c)
+    }
+
+    pub fn get_bldc_peak_current(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        long_read!(self, map::BLDC_PEAK_CURRENT, parse_u8)
+    }
+
+    pub fn set_bldc_peak_current(&mut self, c: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(c <= 150, DriverError::InvalidArgument);
+        long_write!(self, map::BLDC_PEAK_CURRENT, c)
+    }
+
+    pub fn get_bldc_current_time_constant(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        long_read!(self, map::BLDC_CURRENT_TIME_CONSTANT, parse_u16)
+    }
+
+    pub fn set_bldc_current_time_constant(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::BLDC_CURRENT_TIME_CONSTANT, t)
+    }
+
+    // TODO Step mode
+
+    pub fn get_drive_address(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::DRIVE_ADDRESS, parse_u8)
+    }
+
+    pub fn set_drive_address(&mut self, a: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(a >= 1 && a <= 254, DriverError::InvalidArgument);
+        short_write!(self, map::DRIVE_ADDRESS, a)
+    }
+
+    pub fn get_motor_id(&mut self) -> DResult<impl ResponseHandle<u32>> {
+        long_read!(self, map::MOTOR_ID, parse_u32)
+    }
+
+    pub fn set_motor_id(&mut self, id: u32) -> DResult<impl ResponseHandle<()>> {
+        ensure!(id <= 2147483647, DriverError::InvalidArgument);
+        long_write!(self, map::MOTOR_ID, id)
+    }
+
+    // TODO limit switch behavior
+    // TODO error correction mode
+
+    pub fn get_auto_correction_record(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::AUTO_CORRECTION_RECORD, parse_u8)
+    }
+
+    pub fn set_auto_correction_record(&mut self, r: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(r <= 32, DriverError::InvalidArgument);
+        short_write!(self, map::AUTO_CORRECTION_RECORD, r)
+    }
+
+    // TODO encoder direction
+
+    pub fn get_swing_out_time(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::SWING_OUT_TIME, parse_u8)
+    }
+
+    pub fn set_swing_out_time(&mut self, st: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(st <= 250, DriverError::InvalidArgument);
+        short_write!(self, map::SWING_OUT_TIME, st)
+    }
+
+    pub fn get_max_encoder_deviation(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::MAX_ENCODER_DEVIATION, parse_u8)
+    }
+
+    pub fn set_max_encoder_deviation(&mut self, d: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(d <= 250, DriverError::InvalidArgument);
+        short_write!(self, map::MAX_ENCODER_DEVIATION, d)
+    }
+
+    pub fn get_feedrate_numerator(&mut self) -> DResult<impl ResponseHandle<u32>> {
+        long_read!(self, map::FEED_RATE_NUMERATOR, parse_u32)
+    }
+
+    pub fn set_feedrate_numerator(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
+        ensure!(n <= 2147483647, DriverError::InvalidArgument);
+        long_write!(self, map::FEED_RATE_NUMERATOR, n)
+    }
+
+    pub fn get_feedrate_denominator(&mut self) -> DResult<impl ResponseHandle<u32>> {
+        long_read!(self, map::FEED_RATE_DENOMINATOR, parse_u32)
+    }
+
+    pub fn set_feedrate_denominator(&mut self, d: u32) -> DResult<impl ResponseHandle<()>> {
+        ensure!(d <= 2147483647, DriverError::InvalidArgument);
+        long_write!(self, map::FEED_RATE_DENOMINATOR, d)
+    }
+
+    // TODO reset position error
+    // TODO read out error memory
+    // TODO read out encoder position
+    // TODO read out position
+
+    pub fn is_motor_referenced(&mut self) -> DResult<impl ResponseHandle<bool>> {
+        long_read!(self, map::IS_REFERENCED, parse_u8.map(|n| n == 1))
+    }
+
+    // TODO read out firmware version
+    // TODO read out operating time
+    // TODO set digital inputs funciton
+    // TODO set digital outputs funciton
+    // TODO masking and demasking inputs
+    // TODO reversing input output polarity
+
+    pub fn get_input_debounce_time(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        short_read!(self, map::INPUT_DEBOUNCE_TIME, parse_u8)
+    }
+
+    pub fn set_input_debounce_time(&mut self, t: u8) -> DResult<impl ResponseHandle<()>> {
+        ensure!(t <= 250, DriverError::InvalidArgument);
+        short_write!(self, map::INPUT_DEBOUNCE_TIME, t)
+    }
+
+    // TODO set outputs
+    // TODO read eeprom byte
+
+    pub fn reset_eeprom(&mut self) -> DResult<impl ResponseHandle<()>> {
+        short_write!(self, map::RESET_EEPROM, "")
+    }
+
+    // TODO automatic satus sending
+    // TODO start bootloader
+
+    pub fn get_reverse_clearance(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        short_read!(self, map::REVERSE_CLEARANCE, parse_u16)
+    }
+
+    pub fn set_reverse_clearance(&mut self, c: u16) -> DResult<impl ResponseHandle<()>> {
+        ensure!(c <= 9999, DriverError::InvalidArgument);
+        short_write!(self, map::REVERSE_CLEARANCE, c)
+    }
+
+    // TODO set ramp type
+
+    pub fn get_brake_voltage_off_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        long_read!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, parse_u16)
+    }
+
+    pub fn set_brake_voltage_off_wait_time(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, t)
+    }
+
+    pub fn get_motor_movement_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        long_read!(self, map::WAIT_TIME_MOTOR_MOVE, parse_u16)
+    }
+
+    pub fn set_motor_movement_wait_time(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::WAIT_TIME_MOTOR_MOVE, t)
+    }
+
+    pub fn get_motor_current_off_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        long_read!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, parse_u16)
+    }
+
+    pub fn set_motor_current_off_wait_time(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, t)
+    }
+
+    // TODO set baud rate
+    // TODO set crc checksum
+    // TODO set hall config
+    // TODO read out temperature
+    // TODO set quickstop ramp
+
+    pub fn get_quickstop_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
+        long_read!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, parse_u32)
+    }
+
+    pub fn set_quickstop_ramp_no_conversion(&mut self, r: u32) -> DResult<impl ResponseHandle<()>> {
+        ensure!(r <= 3_000_000, DriverError::InvalidArgument);
+        long_write!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, r)
+    }
+
+    pub fn get_gearfactor_numerator(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        long_read!(self, map::GEAR_FACTOR_NUMERATOR, parse_u8)
+    }
+
+    pub fn set_gearfactor_numerator(&mut self, n: u8) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::GEAR_FACTOR_NUMERATOR, n)
+    }
+
+    pub fn get_gearfactor_denominator(&mut self) -> DResult<impl ResponseHandle<u8>> {
+        long_read!(self, map::GEAR_FACTOR_DENOMINATOR, parse_u8)
+    }
+
+    pub fn set_gearfactor_denominator(&mut self, d: u8) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::GEAR_FACTOR_DENOMINATOR, d)
     }
 
     pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<()>> {
