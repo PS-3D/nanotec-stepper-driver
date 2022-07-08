@@ -498,7 +498,24 @@ impl<I: Write + Read> Motor<I> {
     // TODO set baud rate
     // TODO set crc checksum
     // TODO set hall config
-    // TODO read out temperature
+
+    pub fn get_temp_raw(&mut self) -> DResult<impl ResponseHandle<u16>> {
+        short_read!(self, map::READ_TEMP, parse_u16)
+    }
+
+    pub fn get_temp(&mut self) -> DResult<impl ResponseHandle<f64>> {
+        short_read!(
+            self,
+            map::READ_TEMP,
+            parse_u16.map(|r| (1_266_500f64
+                / (4250f64
+                    + ((0.33f64 * (((r as f64) / 1023f64) / (1f64 - ((r as f64) / 1023f64))))
+                        .log10()
+                        * 298f64)))
+                - 273f64)
+        )
+    }
+
     // TODO set quickstop ramp
 
     pub fn get_quickstop_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
