@@ -106,6 +106,26 @@ impl Display for StepMode {
     }
 }
 
+/// Binding for values of [1.5.36 Setting the ramp type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A95%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C724%2Cnull%5D)
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
+pub enum RampType {
+    Trapizoidal,
+    Sinus,
+    JerkFree,
+}
+
+impl RampType {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        parse_enum_value(s, parse_su8, RampType::from_u8)
+    }
+}
+
+impl Display for RampType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
 /// Binding for values of [1.5.40 Setting baud rate of the controller](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A104%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
 ///
 /// Be aware that the numerical values of the enum **don't** correspond to the values

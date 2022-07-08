@@ -1,7 +1,7 @@
 use super::{
     cmd::{
-        BaudRate, MotorStop, MotorType, PositioningMode, Record, RespondMode, RotationDirection,
-        StepMode,
+        BaudRate, MotorStop, MotorType, PositioningMode, RampType, Record, RespondMode,
+        RotationDirection, StepMode,
     },
     map,
     responsehandle::{
@@ -470,7 +470,13 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::REVERSE_CLEARANCE, c)
     }
 
-    // TODO set ramp type
+    pub fn get_ramp_type(&mut self) -> DResult<impl ResponseHandle<RampType>> {
+        long_read!(self, map::RAMP_TYPE, RampType::parse)
+    }
+
+    pub fn set_ramp_type(&mut self, t: RampType) -> DResult<impl ResponseHandle<()>> {
+        long_write!(self, map::RAMP_TYPE, t)
+    }
 
     pub fn get_brake_voltage_off_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
         long_read!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, parse_u16)
