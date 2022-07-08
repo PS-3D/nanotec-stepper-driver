@@ -442,7 +442,14 @@ impl<I: Write + Read> Motor<I> {
         long_write!(self, map::FEED_RATE_DENOMINATOR, d)
     }
 
-    // TODO reset position error
+    pub fn reset_position_error(&mut self, p: i32) -> DResult<impl ResponseHandle<()>> {
+        ensure!(
+            p >= -100_000_000 && p <= 100_000_000,
+            DriverError::InvalidArgument
+        );
+        short_write!(self, map::RESET_POS_ERR, p)
+    }
+
     // TODO read out error memory
     // TODO read out encoder position
     // TODO read out position
