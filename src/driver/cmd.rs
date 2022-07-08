@@ -13,7 +13,13 @@ use super::{
     map,
     parse::{parse_su16, parse_su32, parse_su8},
 };
-use nom::{self, character::complete::i32 as parse_i32, error::FromExternalError, IResult, Parser};
+use chrono::naive::NaiveDate;
+use nom::{
+    self,
+    character::complete::{i32 as parse_i32, u16 as parse_u16, u8 as parse_u8},
+    error::FromExternalError,
+    IResult, Parser,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt::{Debug, Display};
@@ -103,6 +109,130 @@ impl StepMode {
 impl Display for StepMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[allow(non_camel_case_types)]
+pub enum HardwareType {
+    SMCI47_S,
+    PD6_N,
+    PD4_N,
+    PD2_N,
+    SMCI33,
+    SMCI35,
+    SMCI36,
+    SMCI12,
+    SMCP33,
+}
+
+impl HardwareType {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        use nom::{branch::alt, bytes::complete::tag};
+        alt((
+            tag("SMCI47-S").map(|_| HardwareType::SMCI47_S),
+            tag("PD6-N").map(|_| HardwareType::PD6_N),
+            tag("PD4-N").map(|_| HardwareType::PD4_N),
+            tag("PD2-N").map(|_| HardwareType::PD2_N),
+            tag("SMCI33").map(|_| HardwareType::SMCI33),
+            tag("SMCI35").map(|_| HardwareType::SMCI35),
+            tag("SMCI36").map(|_| HardwareType::SMCI36),
+            tag("SMCI12").map(|_| HardwareType::SMCI12),
+            tag("SMCP33").map(|_| HardwareType::SMCP33),
+        ))
+        .parse(s)
+    }
+}
+
+impl Display for HardwareType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HardwareType::SMCI47_S => write!(f, "SMCI47-S"),
+            HardwareType::PD6_N => write!(f, "PD6-N"),
+            HardwareType::PD4_N => write!(f, "PD4-N"),
+            HardwareType::PD2_N => write!(f, "PD2-N"),
+            HardwareType::SMCI33 => write!(f, "SMCI33"),
+            HardwareType::SMCI35 => write!(f, "SMCI35"),
+            HardwareType::SMCI36 => write!(f, "SMCI36"),
+            HardwareType::SMCI12 => write!(f, "SMCI12"),
+            HardwareType::SMCP33 => write!(f, "SMCP33"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum CommunicationType {
+    USB,
+    RS485,
+}
+
+impl CommunicationType {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        use nom::{branch::alt, bytes::complete::tag};
+        alt((
+            tag("USB").map(|_| CommunicationType::USB),
+            tag("RS485").map(|_| CommunicationType::RS485),
+        ))
+        .parse(s)
+    }
+}
+
+impl Display for CommunicationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommunicationType::USB => write!(f, "USB"),
+            CommunicationType::RS485 => write!(f, "RS485"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub struct FirmwareVersion {
+    pub hardware: HardwareType,
+    pub communication: CommunicationType,
+    pub release_date: NaiveDate,
+    pub revision: u16,
+}
+
+/// Binding for values of [1.5.23 Reading out the firmware version](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A74%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+impl FirmwareVersion {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        use nom::{bytes::complete::tag, sequence::tuple};
+        tuple((
+            HardwareType::parse,
+            tag("_"),
+            CommunicationType::parse,
+            tag("_"),
+            parse_u8,
+            tag("-"),
+            parse_u8,
+            tag("-"),
+            parse_u16,
+            tag("-rev"),
+            parse_u16,
+        ))
+        .map(
+            |(hardware, _, communication, _, day, _, month, _, year, _, revision)| Self {
+                hardware,
+                communication,
+                release_date: NaiveDate::from_ymd(year.into(), month.into(), day.into()),
+                revision,
+            },
+        )
+        .parse(s)
+    }
+}
+
+impl Display for FirmwareVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}_{}_{}-rev{}",
+            self.hardware,
+            self.communication,
+            self.release_date.format("%d-%m-%Y"),
+            self.revision
+        )
     }
 }
 

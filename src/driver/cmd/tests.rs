@@ -1,6 +1,10 @@
+use chrono::naive::NaiveDate;
 use nom::Finish;
 
-use super::{MotorStop, MotorType, Msg, PositioningMode, Record, RespondMode, RotationDirection};
+use super::{
+    CommunicationType, FirmwareVersion, HardwareType, MotorStop, MotorType, Msg, PositioningMode,
+    Record, RespondMode, RotationDirection,
+};
 
 #[test]
 fn motortype_parse() {
@@ -25,6 +29,61 @@ fn motortype_parse_garbage() {
 fn motortype_display() {
     let s = format!("{}", MotorType::BLDCHall);
     let expected = "1";
+    assert_eq!(expected, s)
+}
+
+#[test]
+fn hardwaretype_parse() {
+    let (_, t) = HardwareType::parse(b"SMCI47-S").finish().unwrap();
+    let expected = HardwareType::SMCI47_S;
+    assert_eq!(expected, t)
+}
+
+#[test]
+fn hardwaretype_display() {
+    let s = format!("{}", HardwareType::SMCP33);
+    let expected = "SMCP33";
+    assert_eq!(expected, s)
+}
+
+#[test]
+fn communicationtype_parse() {
+    let (_, t) = CommunicationType::parse(b"RS485").finish().unwrap();
+    let expected = CommunicationType::RS485;
+    assert_eq!(expected, t)
+}
+
+#[test]
+fn communicationtype_display() {
+    let s = format!("{}", CommunicationType::RS485);
+    let expected = "RS485";
+    assert_eq!(expected, s)
+}
+
+#[test]
+fn firmwareversion_parse() {
+    let (_, v) = FirmwareVersion::parse(b"SMCI47-S_RS485_17-05-2011-rev3711")
+        .finish()
+        .unwrap();
+    let expected = FirmwareVersion {
+        hardware: HardwareType::SMCI47_S,
+        communication: CommunicationType::RS485,
+        release_date: NaiveDate::from_ymd(2011, 5, 17),
+        revision: 3711,
+    };
+    assert_eq!(expected, v)
+}
+
+#[test]
+fn firmwareversion_display() {
+    let v = FirmwareVersion {
+        hardware: HardwareType::SMCI47_S,
+        communication: CommunicationType::RS485,
+        release_date: NaiveDate::from_ymd(2011, 5, 17),
+        revision: 3711,
+    };
+    let s = format!("{}", v);
+    let expected = "SMCI47-S_RS485_17-05-2011-rev3711";
     assert_eq!(expected, s)
 }
 

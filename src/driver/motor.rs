@@ -1,7 +1,7 @@
 use super::{
     cmd::{
-        BaudRate, MotorStop, MotorType, PositioningMode, RampType, Record, RespondMode,
-        RotationDirection, StepMode,
+        BaudRate, FirmwareVersion, MotorStop, MotorType, PositioningMode, RampType, Record,
+        RespondMode, RotationDirection, StepMode,
     },
     map,
     responsehandle::{
@@ -435,7 +435,10 @@ impl<I: Write + Read> Motor<I> {
         long_read!(self, map::IS_REFERENCED, parse_u8.map(|n| n == 1))
     }
 
-    // TODO read out firmware version
+    pub fn get_firmware_version(&mut self) -> DResult<impl ResponseHandle<FirmwareVersion>> {
+        short_read!(self, map::READ_FIRMWARE_VERSION, FirmwareVersion::parse)
+    }
+
     // TODO read out operating time
     // TODO set digital inputs funciton
     // TODO set digital outputs funciton
