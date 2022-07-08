@@ -78,6 +78,34 @@ impl Display for MotorType {
     }
 }
 
+/// Binding for values of [1.5.6 Setting the step mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A49%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C483%2Cnull%5D)
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
+pub enum StepMode {
+    One = 1,
+    Two = 2,
+    Four = 4,
+    Five = 5,
+    Eight = 8,
+    Ten = 10,
+    Sixteen = 16,
+    Thirtytwo = 32,
+    Sixtyfour = 64,
+    Feedrate = 254,
+    Adaptive = 255,
+}
+
+impl StepMode {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        parse_enum_value(s, parse_su8, StepMode::from_u8)
+    }
+}
+
+impl Display for StepMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
 /// Binding for values of [1.6.2 Stopping a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A120%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C506%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorStop {

@@ -1,5 +1,7 @@
 use super::{
-    cmd::{MotorStop, MotorType, PositioningMode, Record, RespondMode, RotationDirection},
+    cmd::{
+        MotorStop, MotorType, PositioningMode, Record, RespondMode, RotationDirection, StepMode,
+    },
     map,
     responsehandle::{
         DummyResponseHandle, ReadResponseHandle, ResponseHandle, WrapperResponseHandle,
@@ -347,7 +349,13 @@ impl<I: Write + Read> Motor<I> {
         long_write!(self, map::BLDC_CURRENT_TIME_CONSTANT, t)
     }
 
-    // TODO Step mode
+    pub fn get_step_mode(&mut self) -> DResult<impl ResponseHandle<StepMode>> {
+        short_read!(self, map::STEP_MODE, StepMode::parse)
+    }
+
+    pub fn set_step_mode(&mut self, m: StepMode) -> DResult<impl ResponseHandle<()>> {
+        short_write!(self, map::STEP_MODE, m)
+    }
 
     pub fn get_drive_address(&mut self) -> DResult<impl ResponseHandle<u8>> {
         short_read!(self, map::DRIVE_ADDRESS, parse_u8)
