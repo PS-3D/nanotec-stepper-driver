@@ -11,9 +11,13 @@ use super::{
     DriverError, InnerDriver,
 };
 use crate::util::ensure;
+use chrono::{DateTime, Duration, Local};
 use nom::{
     bytes::complete::tag,
-    character::complete::{i32 as parse_i32, u16 as parse_u16, u32 as parse_u32, u8 as parse_u8},
+    character::complete::{
+        i32 as parse_i32, i64 as parse_i64, u16 as parse_u16, u32 as parse_u32, u64 as parse_u64,
+        u8 as parse_u8,
+    },
     sequence::{preceded, tuple},
     Finish, Parser,
 };
@@ -439,7 +443,23 @@ impl<I: Write + Read> Motor<I> {
         short_read!(self, map::READ_FIRMWARE_VERSION, FirmwareVersion::parse)
     }
 
-    // TODO read out operating time
+    pub fn get_operating_time(&mut self) -> DResult<impl ResponseHandle<u64>> {
+        long_read!(self, map::READ_OPERATING_TIME, parse_u64)
+    }
+
+    /// This command is not in the manual. It just gives you the time the motor
+    /// operation started in the current time zone, similar to [`get_operating_time`][Motor::get_operating_time]
+    pub fn get_operation_start(&mut self) -> DResult<impl ResponseHandle<DateTime<Local>>> {
+        long_read!(
+            self,
+            map::READ_OPERATING_TIME,
+            parse_i64.map(|s| {
+                let now = Local::now();
+                now - Duration::seconds(s)
+            })
+        )
+    }
+
     // TODO set digital inputs funciton
     // TODO set digital outputs funciton
     // TODO masking and demasking inputs
