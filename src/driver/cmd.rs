@@ -375,6 +375,58 @@ impl Display for FirmwareVersion {
     }
 }
 
+/// Binding for values of [1.5.25 Setting the function of the digital inputs](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A76%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C744%2Cnull%5D)
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
+pub enum DigitalInputFunction {
+    UserDefined,
+    StartRecordErrorReset,
+    RecordSelectionBit0,
+    RecordSelectionBit1,
+    RecordSelectionBit2,
+    RecordSelectionBit3,
+    RecordSelectionBit4,
+    ExternalReferenceSwitch,
+    Trigger,
+    Direction,
+    Enable,
+    Clock,
+    ClockDirectionModeSelection1,
+    ClockDirectionModeSelection2,
+}
+
+impl DigitalInputFunction {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        parse_enum_value(s, parse_su8, Self::from_u8)
+    }
+}
+
+impl Display for DigitalInputFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
+/// Binding for values of [1.5.26 Setting the function of the digital outputs](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A78%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
+pub enum DigitalOutputFunction {
+    UserDefined,
+    Ready,
+    Running,
+    Error,
+}
+
+impl DigitalOutputFunction {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+        parse_enum_value(s, parse_su8, Self::from_u8)
+    }
+}
+
+impl Display for DigitalOutputFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
 /// Binding for values of [1.5.36 Setting the ramp type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A95%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C724%2Cnull%5D)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RampType {

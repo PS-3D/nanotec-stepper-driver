@@ -34,9 +34,8 @@ makepl!(
     READ_STATUS, "$",
     READ_FIRMWARE_VERSION, "v",
     READ_OPERATING_TIME, ":optime",
-    // TODO digital inputs function
-    // TODO digital outputs function
-    DE_MASK_INPUTS, "L",
+    DIGITAL_INPUT_FUNCTION_PARTIAL, ":port_in_",
+    DIGITAL_OUTPUT_FUNCTION_PARTIAL, ":port_out_",
     REVERSE_IN_OUT_POLARITY, "h",
     INPUT_DEBOUNCE_TIME, "K",
     OUTPUTS, "Y",

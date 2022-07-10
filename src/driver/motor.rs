@@ -1,7 +1,8 @@
 use super::{
     cmd::{
-        BaudRate, ErrorCorrectionMode, FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop,
-        MotorType, PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
+        BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
+        FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop, MotorType, PositioningMode,
+        RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
     responsehandle::{
@@ -509,10 +510,58 @@ impl<I: Write + Read> Motor<I> {
         )
     }
 
-    // TODO set digital inputs funciton
-    // TODO set digital outputs funciton
-    // TODO masking and demasking inputs
-    // TODO reversing input output polarity
+    pub fn get_digital_input_function(
+        &mut self,
+        i: u8,
+    ) -> DResult<impl ResponseHandle<DigitalInputFunction>> {
+        ensure!(i <= 8 && i >= 1, DriverError::InvalidArgument);
+        let mut name = map::DIGITAL_INPUT_FUNCTION_PARTIAL.to_string();
+        name.push(char::from_u32(60 + (i as u32)).unwrap());
+        long_read!(self, name.as_str(), DigitalInputFunction::parse)
+    }
+
+    pub fn set_digital_input_function(
+        &mut self,
+        i: u8,
+        f: DigitalInputFunction,
+    ) -> DResult<impl ResponseHandle<()>> {
+        ensure!(i <= 8 && i >= 1, DriverError::InvalidArgument);
+        let mut name = map::DIGITAL_INPUT_FUNCTION_PARTIAL.to_string();
+        name.push(char::from_u32(60 + (i as u32)).unwrap());
+        long_write!(self, name.as_str(), f)
+    }
+
+    pub fn get_digital_output_function(
+        &mut self,
+        o: u8,
+    ) -> DResult<impl ResponseHandle<DigitalOutputFunction>> {
+        ensure!(o <= 8 && o >= 1, DriverError::InvalidArgument);
+        let mut name = map::DIGITAL_OUTPUT_FUNCTION_PARTIAL.to_string();
+        name.push(char::from_u32(60 + (o as u32)).unwrap());
+        long_read!(self, name.as_str(), DigitalOutputFunction::parse)
+    }
+
+    pub fn set_digital_output_function(
+        &mut self,
+        o: u8,
+        f: DigitalOutputFunction,
+    ) -> DResult<impl ResponseHandle<()>> {
+        ensure!(o <= 8 && o >= 1, DriverError::InvalidArgument);
+        let mut name = map::DIGITAL_OUTPUT_FUNCTION_PARTIAL.to_string();
+        name.push(char::from_u32(60 + (o as u32)).unwrap());
+        long_write!(self, name.as_str(), f)
+    }
+
+    // Not implementing Masking and demasking inputs since it is deprecated
+
+    pub fn get_reverse_in_out_polarity(&mut self) -> DResult<impl ResponseHandle<u32>> {
+        short_read!(self, map::REVERSE_IN_OUT_POLARITY, parse_u32)
+    }
+
+    pub fn set_reverse_in_out_polarity(&mut self, b: u32) -> DResult<impl ResponseHandle<()>> {
+        ensure!(b & 0x1ff00ff == b, DriverError::InvalidArgument);
+        short_write!(self, map::REVERSE_IN_OUT_POLARITY, b)
+    }
 
     pub fn get_input_debounce_time(&mut self) -> DResult<impl ResponseHandle<u8>> {
         short_read!(self, map::INPUT_DEBOUNCE_TIME, parse_u8)
