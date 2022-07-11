@@ -1,6 +1,6 @@
 use nom::{
     bytes::complete::tag,
-    character::complete::{u16 as parse_u16, u32 as parse_u32, u8 as parse_u8},
+    character::complete::{u16 as parse_u16, u32 as parse_u32, u64 as parse_u64, u8 as parse_u8},
     combinator::opt,
     sequence::preceded,
     IResult, Parser,
@@ -32,4 +32,11 @@ where
     E: nom::error::ParseError<&'a [u8]>,
 {
     parse_s(parse_u32)(s)
+}
+
+pub fn parse_su64<'a, E>(s: &'a [u8]) -> IResult<&'a [u8], u64, E>
+where
+    E: nom::error::ParseError<&'a [u8]>,
+{
+    parse_s(parse_u64)(s)
 }

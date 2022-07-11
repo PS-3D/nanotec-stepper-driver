@@ -5,6 +5,7 @@ use super::{
         RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
+    parse::{parse_su16, parse_su32, parse_su64, parse_su8},
     responsehandle::{
         DummyResponseHandle, ReadResponseHandle, ResponseHandle, WrapperResponseHandle,
         WriteResponseHandle,
@@ -15,10 +16,7 @@ use crate::util::ensure;
 use chrono::{DateTime, Duration, Local};
 use nom::{
     bytes::complete::tag,
-    character::complete::{
-        i32 as parse_i32, i64 as parse_i64, u16 as parse_u16, u32 as parse_u32, u64 as parse_u64,
-        u8 as parse_u8,
-    },
+    character::complete::{i32 as parse_i32, i64 as parse_i64},
     sequence::{preceded, tuple},
     Finish, Parser,
 };
@@ -321,7 +319,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_phase_current(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::PHASE_CURRENT, parse_u8)
+        short_read!(self, map::PHASE_CURRENT, parse_su8)
     }
 
     pub fn set_phase_current(&mut self, c: u8) -> DResult<impl ResponseHandle<()>> {
@@ -330,7 +328,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_standstill_phase_current(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::STANDSTILL_PHASE_CURRENT, parse_u8)
+        short_read!(self, map::STANDSTILL_PHASE_CURRENT, parse_su8)
     }
 
     pub fn set_standstill_phase_current(&mut self, c: u8) -> DResult<impl ResponseHandle<()>> {
@@ -339,7 +337,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_bldc_peak_current(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        long_read!(self, map::BLDC_PEAK_CURRENT, parse_u8)
+        long_read!(self, map::BLDC_PEAK_CURRENT, parse_su8)
     }
 
     pub fn set_bldc_peak_current(&mut self, c: u8) -> DResult<impl ResponseHandle<()>> {
@@ -348,7 +346,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_bldc_current_time_constant(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        long_read!(self, map::BLDC_CURRENT_TIME_CONSTANT, parse_u16)
+        long_read!(self, map::BLDC_CURRENT_TIME_CONSTANT, parse_su16)
     }
 
     pub fn set_bldc_current_time_constant(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
@@ -364,7 +362,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_drive_address(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::DRIVE_ADDRESS, parse_u8)
+        short_read!(self, map::DRIVE_ADDRESS, parse_su8)
     }
 
     pub fn set_drive_address(&mut self, a: u8) -> DResult<impl ResponseHandle<()>> {
@@ -373,7 +371,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_motor_id(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        long_read!(self, map::MOTOR_ID, parse_u32)
+        long_read!(self, map::MOTOR_ID, parse_su32)
     }
 
     pub fn set_motor_id(&mut self, id: u32) -> DResult<impl ResponseHandle<()>> {
@@ -408,7 +406,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_auto_correction_record(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::AUTO_CORRECTION_RECORD, parse_u8)
+        short_read!(self, map::AUTO_CORRECTION_RECORD, parse_su8)
     }
 
     pub fn set_auto_correction_record(&mut self, r: u8) -> DResult<impl ResponseHandle<()>> {
@@ -419,7 +417,7 @@ impl<I: Write + Read> Motor<I> {
     // TODO encoder direction
 
     pub fn get_swing_out_time(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::SWING_OUT_TIME, parse_u8)
+        short_read!(self, map::SWING_OUT_TIME, parse_su8)
     }
 
     pub fn set_swing_out_time(&mut self, st: u8) -> DResult<impl ResponseHandle<()>> {
@@ -428,7 +426,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_max_encoder_deviation(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::MAX_ENCODER_DEVIATION, parse_u8)
+        short_read!(self, map::MAX_ENCODER_DEVIATION, parse_su8)
     }
 
     pub fn set_max_encoder_deviation(&mut self, d: u8) -> DResult<impl ResponseHandle<()>> {
@@ -437,7 +435,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_feedrate_numerator(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        long_read!(self, map::FEED_RATE_NUMERATOR, parse_u32)
+        long_read!(self, map::FEED_RATE_NUMERATOR, parse_su32)
     }
 
     pub fn set_feedrate_numerator(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
@@ -446,7 +444,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_feedrate_denominator(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        long_read!(self, map::FEED_RATE_DENOMINATOR, parse_u32)
+        long_read!(self, map::FEED_RATE_DENOMINATOR, parse_su32)
     }
 
     pub fn set_feedrate_denominator(&mut self, d: u32) -> DResult<impl ResponseHandle<()>> {
@@ -468,7 +466,7 @@ impl<I: Write + Read> Motor<I> {
         read!(
             self,
             preceded(
-                tuple((tag(map::READ), parse_u8, tag(map::READ_ERR_MEM))),
+                tuple((tag(map::READ), parse_su8, tag(map::READ_ERR_MEM))),
                 MotorError::parse
             ),
             format_args!("{}{}{}", map::READ, p, map::READ_ERR_MEM)
@@ -484,7 +482,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn is_motor_referenced(&mut self) -> DResult<impl ResponseHandle<bool>> {
-        long_read!(self, map::IS_REFERENCED, parse_u8.map(|n| n == 1))
+        long_read!(self, map::IS_REFERENCED, parse_su8.map(|n| n == 1))
     }
 
     // TODO reading out status
@@ -494,7 +492,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_operating_time(&mut self) -> DResult<impl ResponseHandle<u64>> {
-        long_read!(self, map::READ_OPERATING_TIME, parse_u64)
+        long_read!(self, map::READ_OPERATING_TIME, parse_su64)
     }
 
     /// This command is not in the manual. It just gives you the time the motor
@@ -555,7 +553,7 @@ impl<I: Write + Read> Motor<I> {
     // Not implementing Masking and demasking inputs since it is deprecated
 
     pub fn get_reverse_in_out_polarity(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::REVERSE_IN_OUT_POLARITY, parse_u32)
+        short_read!(self, map::REVERSE_IN_OUT_POLARITY, parse_su32)
     }
 
     pub fn set_reverse_in_out_polarity(&mut self, b: u32) -> DResult<impl ResponseHandle<()>> {
@@ -564,7 +562,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_input_debounce_time(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::INPUT_DEBOUNCE_TIME, parse_u8)
+        short_read!(self, map::INPUT_DEBOUNCE_TIME, parse_su8)
     }
 
     pub fn set_input_debounce_time(&mut self, t: u8) -> DResult<impl ResponseHandle<()>> {
@@ -583,7 +581,7 @@ impl<I: Write + Read> Motor<I> {
     // TODO start bootloader
 
     pub fn get_reverse_clearance(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        short_read!(self, map::REVERSE_CLEARANCE, parse_u16)
+        short_read!(self, map::REVERSE_CLEARANCE, parse_su16)
     }
 
     pub fn set_reverse_clearance(&mut self, c: u16) -> DResult<impl ResponseHandle<()>> {
@@ -600,7 +598,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_brake_voltage_off_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        long_read!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, parse_u16)
+        long_read!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, parse_su16)
     }
 
     pub fn set_brake_voltage_off_wait_time(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
@@ -608,7 +606,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_motor_movement_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        long_read!(self, map::WAIT_TIME_MOTOR_MOVE, parse_u16)
+        long_read!(self, map::WAIT_TIME_MOTOR_MOVE, parse_su16)
     }
 
     pub fn set_motor_movement_wait_time(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
@@ -616,7 +614,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_motor_current_off_wait_time(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        long_read!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, parse_u16)
+        long_read!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, parse_su16)
     }
 
     pub fn set_motor_current_off_wait_time(&mut self, t: u16) -> DResult<impl ResponseHandle<()>> {
@@ -635,14 +633,14 @@ impl<I: Write + Read> Motor<I> {
     // TODO set hall config
 
     pub fn get_temp_raw(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        short_read!(self, map::READ_TEMP, parse_u16)
+        short_read!(self, map::READ_TEMP, parse_su16)
     }
 
     pub fn get_temp(&mut self) -> DResult<impl ResponseHandle<f64>> {
         short_read!(
             self,
             map::READ_TEMP,
-            parse_u16.map(|r| (1_266_500f64
+            parse_su16.map(|r| (1_266_500f64
                 / (4250f64
                     + ((0.33f64 * (((r as f64) / 1023f64) / (1f64 - ((r as f64) / 1023f64))))
                         .log10()
@@ -652,7 +650,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_quickstop_ramp(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        short_read!(self, map::QUICKSTOP_RAMP, parse_u16)
+        short_read!(self, map::QUICKSTOP_RAMP, parse_su16)
     }
 
     pub fn set_quickstop_ramp(&mut self, s: u16) -> DResult<impl ResponseHandle<()>> {
@@ -661,7 +659,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_quickstop_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        long_read!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, parse_u32)
+        long_read!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, parse_su32)
     }
 
     pub fn set_quickstop_ramp_no_conversion(&mut self, r: u32) -> DResult<impl ResponseHandle<()>> {
@@ -670,7 +668,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_gearfactor_numerator(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        long_read!(self, map::GEAR_FACTOR_NUMERATOR, parse_u8)
+        long_read!(self, map::GEAR_FACTOR_NUMERATOR, parse_su8)
     }
 
     pub fn set_gearfactor_numerator(&mut self, n: u8) -> DResult<impl ResponseHandle<()>> {
@@ -678,7 +676,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_gearfactor_denominator(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        long_read!(self, map::GEAR_FACTOR_DENOMINATOR, parse_u8)
+        long_read!(self, map::GEAR_FACTOR_DENOMINATOR, parse_su8)
     }
 
     pub fn set_gearfactor_denominator(&mut self, d: u8) -> DResult<impl ResponseHandle<()>> {
@@ -722,8 +720,8 @@ impl<I: Write + Read> Motor<I> {
         ensure!(n <= 32, DriverError::InvalidArgument);
         read!(
             self,
-            // FIXME concrete value instead of just parse_u8
-            preceded(tuple((tag(map::READ), parse_u8)), Record::parse),
+            // FIXME concrete value instead of just parse_su8
+            preceded(tuple((tag(map::READ), parse_su8)), Record::parse),
             format_args!("{}{}{}", map::READ, n, map::READ_CURRENT_RECORD)
         )
     }
@@ -774,7 +772,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_min_frequency(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::MIN_FREQUENCY, parse_u32)
+        short_read!(self, map::MIN_FREQUENCY, parse_su32)
     }
 
     pub fn set_min_frequency(&mut self, frequency: u32) -> DResult<impl ResponseHandle<()>> {
@@ -786,7 +784,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_max_frequency(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::MAX_FREQUENCY, parse_u32)
+        short_read!(self, map::MAX_FREQUENCY, parse_su32)
     }
 
     pub fn set_max_frequency(&mut self, frequency: u32) -> DResult<impl ResponseHandle<()>> {
@@ -798,7 +796,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_max_frequency2(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::MAX_FREQUENCY2, parse_u32)
+        short_read!(self, map::MAX_FREQUENCY2, parse_su32)
     }
 
     pub fn set_max_frequency2(&mut self, frequency: u32) -> DResult<impl ResponseHandle<()>> {
@@ -810,7 +808,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_accel_ramp(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        short_read!(self, map::ACCEL_RAMP, parse_u16)
+        short_read!(self, map::ACCEL_RAMP, parse_su16)
     }
 
     pub fn set_accel_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<()>> {
@@ -819,7 +817,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_accel_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        long_read!(self, map::ACCEL_RAMP_NO_CONVERSION, parse_u32)
+        long_read!(self, map::ACCEL_RAMP_NO_CONVERSION, parse_su32)
     }
 
     pub fn set_accel_ramp_no_conversion(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
@@ -828,7 +826,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_brake_ramp(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        short_read!(self, map::BRAKE_RAMP, parse_u16)
+        short_read!(self, map::BRAKE_RAMP, parse_su16)
     }
 
     pub fn set_brake_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<()>> {
@@ -836,7 +834,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_brake_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        long_read!(self, map::BRAKE_RAMP_NO_CONVERSION, parse_u32)
+        long_read!(self, map::BRAKE_RAMP_NO_CONVERSION, parse_su32)
     }
 
     pub fn set_brake_ramp_no_conversion(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
@@ -859,7 +857,7 @@ impl<I: Write + Read> Motor<I> {
         short_read!(
             self,
             map::ROTATION_DIRECTION_CHANGE,
-            parse_u8.map(|n| n == 1)
+            parse_su8.map(|n| n == 1)
         )
     }
 
@@ -872,7 +870,7 @@ impl<I: Write + Read> Motor<I> {
 
     // TODO maybe work out better type since 0 means endless
     pub fn get_repetitions(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::REPETITIONS, parse_u32)
+        short_read!(self, map::REPETITIONS, parse_su32)
     }
 
     pub fn set_repetitions(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
@@ -881,7 +879,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_record_pause(&mut self) -> DResult<impl ResponseHandle<u16>> {
-        short_read!(self, map::RECORD_PAUSE, parse_u16)
+        short_read!(self, map::RECORD_PAUSE, parse_su16)
     }
 
     pub fn set_record_pause(&mut self, n: u16) -> DResult<impl ResponseHandle<()>> {
@@ -889,7 +887,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_continuation_record(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::CONTINUATION_RECORD, parse_u8)
+        short_read!(self, map::CONTINUATION_RECORD, parse_su8)
     }
 
     // TODO make option for no continuation record
@@ -899,7 +897,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_max_accel_jerk(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::MAX_ACCEL_JERK, parse_u32)
+        short_read!(self, map::MAX_ACCEL_JERK, parse_su32)
     }
 
     pub fn set_max_accel_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
@@ -908,7 +906,7 @@ impl<I: Write + Read> Motor<I> {
     }
 
     pub fn get_max_brake_jerk(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::MAX_BRAKE_JERK, parse_u32)
+        short_read!(self, map::MAX_BRAKE_JERK, parse_su32)
     }
 
     pub fn set_max_brake_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
