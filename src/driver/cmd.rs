@@ -137,9 +137,7 @@ pub enum LimitSwitchBehaviorNormal {
 /// Binding for values of [1.5.9 Setting the limit switch behavior](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 ///
 /// The 4 parts of the bit mask are split into 4 different enums in this struct,
-/// which is then converted to a u32. `internal_reference` corresponds to the
-/// first 2 bits, `internal_normal` to bits 2-5, `external_reference` to bit
-/// bits 9-10 and `external_normal` to bits 11-14.
+/// which is then converted to a u32.
 ///
 /// # Examples
 /// ```
@@ -156,9 +154,13 @@ pub enum LimitSwitchBehaviorNormal {
 /// `example` would correspond to bits 0, 2, 9 and 11 being set.
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct LimitSwitchBehavior {
+    /// Corresponds to the first 2 bits
     pub internal_reference: LimitSwitchBehaviorReference,
+    /// Corresponds to bits 2-5
     pub internal_normal: LimitSwitchBehaviorNormal,
+    /// Corresponds to bits 9-10
     pub external_reference: LimitSwitchBehaviorReference,
+    /// Corresponds to bits 11-14
     pub external_normal: LimitSwitchBehaviorNormal,
 }
 
@@ -225,10 +227,11 @@ impl From<LimitSwitchBehavior> for u32 {
     }
 }
 
-/// # Panics
-/// panics if the given u32 is not a valid LimitSwitchBehavior i.e. multiple bits
-/// per section are set
 impl From<u32> for LimitSwitchBehavior {
+    /// Converts from [`u32`] to [`LimitSwitchBehavior`]
+    /// # Panics
+    /// Panics if the given u32 is not a valid LimitSwitchBehavior i.e. multiple bits
+    /// per section are set.
     fn from(b: u32) -> Self {
         Self::from_u32(b).unwrap()
     }
