@@ -178,6 +178,19 @@ impl LimitSwitchBehavior {
         }
     }
 
+    /// Converts from [`u32`] to LimitSwitchBehavior
+    ///
+    /// # Examples
+    /// ```
+    /// # use nanotec_stepper_driver::{LimitSwitchBehavior, LimitSwitchBehaviorReference,
+    /// #     LimitSwitchBehaviorNormal};
+    /// let example = LimitSwitchBehavior {
+    ///     internal_reference: LimitSwitchBehaviorReference::FreeTravelForwards,
+    ///     internal_normal: LimitSwitchBehaviorNormal::FreeTravelForwards,
+    ///     external_reference: LimitSwitchBehaviorReference::FreeTravelForwards,
+    ///     external_normal: LimitSwitchBehaviorNormal::FreeTravelForwards,
+    /// };
+    /// assert_eq!(LimitSwitchBehavior::from_u32(0xa05).unwrap(), example)
     pub fn from_u32(b: u32) -> Option<Self> {
         fn reference(b: u32) -> Option<LimitSwitchBehaviorReference> {
             match b & 0x3 {
@@ -228,7 +241,8 @@ impl From<LimitSwitchBehavior> for u32 {
 }
 
 impl From<u32> for LimitSwitchBehavior {
-    /// Converts from [`u32`] to [`LimitSwitchBehavior`]
+    /// Convertsfrom [`u32`] to LimitSwitchBehavior
+    ///
     /// # Panics
     /// Panics if the given u32 is not a valid LimitSwitchBehavior i.e. multiple bits
     /// per section are set.
