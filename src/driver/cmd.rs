@@ -28,7 +28,7 @@ use thiserror::Error;
 /// Gets thrown when there is an error while parsing the various enums which
 /// represent values for the commands
 #[derive(Error, Debug)]
-pub enum ParseError {
+enum ParseError {
     /// Gets thrown when a a value of a command doesn't have a matching enum variant,
     /// which usually means it's too big.
     #[error("Invalid Value while Parsing, probably too big")]
