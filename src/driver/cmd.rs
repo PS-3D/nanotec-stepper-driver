@@ -165,7 +165,7 @@ pub struct LimitSwitchBehavior {
 }
 
 impl LimitSwitchBehavior {
-    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         let (rem, res) = parse_su32(s)?;
         if let Some(l) = Self::from_u32(res) {
             Ok((rem, l))
