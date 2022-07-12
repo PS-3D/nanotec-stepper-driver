@@ -28,7 +28,7 @@ fn motortype_parse_garbage() {
 
 #[test]
 fn limitswitchbehavior_parse() {
-    let (_, l) = LimitSwitchBehavior::parse(b"+8721").finish().unwrap();
+    let (_, l) = LimitSwitchBehavior::parse(b"+17425").finish().unwrap();
     let expected = LimitSwitchBehavior {
         internal_reference: LimitSwitchBehaviorReference::FreeTravelForwards,
         internal_normal: LimitSwitchBehaviorNormal::Stop,

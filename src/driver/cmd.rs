@@ -168,8 +168,8 @@ impl LimitSwitchBehavior {
         Some(Self {
             internal_reference: reference(b)?,
             internal_normal: normal(b >> 2)?,
-            external_reference: reference(b >> 8)?,
-            external_normal: normal(b >> 10)?,
+            external_reference: reference(b >> 9)?,
+            external_normal: normal(b >> 11)?,
         })
     }
 }
@@ -192,8 +192,8 @@ impl From<LimitSwitchBehavior> for u32 {
         }
         reference(l.internal_reference)
             | (normal(l.internal_normal) << 2)
-            | (reference(l.external_reference) << 8)
-            | (normal(l.external_normal) << 10)
+            | (reference(l.external_reference) << 9)
+            | (normal(l.external_normal) << 11)
     }
 }
 
