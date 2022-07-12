@@ -64,7 +64,7 @@ where
     ))
 }
 
-/// Binding for values of [1.5.1 Setting the motor type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A45%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C699%2Cnull%5D)
+/// Binding for values of [1.5.1 Setting the motor type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorType {
     Stepper,
@@ -84,7 +84,7 @@ impl Display for MotorType {
     }
 }
 
-/// Binding for values of [1.5.6 Setting the step mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A49%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C483%2Cnull%5D)
+/// Binding for values of [1.5.6 Setting the step mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum StepMode {
     One = 1,
@@ -112,12 +112,20 @@ impl Display for StepMode {
     }
 }
 
+/// Helper binding for values of [1.5.9 Setting the limit switch behavior](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+///
+/// Represents the 2 possibilities given under "Bahavior of the ... limit switch during
+/// a reference run"
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum LimitSwitchBehaviorReference {
     FreeTravelForwards,
     FreeTravelBackwards,
 }
 
+/// Helper binding for values of [1.5.9 Setting the limit switch behavior](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+///
+/// Represents the 4 possibilities given under "Bahavior of the ... limit switch during
+/// a normal run"
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum LimitSwitchBehaviorNormal {
     FreeTravelForwards,
@@ -126,6 +134,26 @@ pub enum LimitSwitchBehaviorNormal {
     Ignore,
 }
 
+/// Binding for values of [1.5.9 Setting the limit switch behavior](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+///
+/// The 4 parts of the bit mask are split into 4 different enums in this struct,
+/// which is then converted to a u32. `internal_reference` corresponds to the
+/// first 2 bits, `internal_normal` to bits 2-5, `external_reference` to bit
+/// bits 9-10 and `external_normal` to bits 11-14.
+///
+/// # Examples
+/// ```
+/// # use nanotec_stepper_driver::{LimitSwitchBehavior, LimitSwitchBehaviorReference,
+/// #     LimitSwitchBehaviorNormal};
+/// let example = LimitSwitchBehavior {
+///     internal_reference: LimitSwitchBehaviorReference::FreeTravelForwards,
+///     internal_normal: LimitSwitchBehaviorNormal::FreeTravelForwards,
+///     external_reference: LimitSwitchBehaviorReference::FreeTravelForwards,
+///     external_normal: LimitSwitchBehaviorNormal::FreeTravelForwards,
+/// };
+/// assert_eq!(0xa05, u32::from(example))
+/// ```
+/// `example` would correspond to bits 0, 2, 9 and 11 being set.
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct LimitSwitchBehavior {
     pub internal_reference: LimitSwitchBehaviorReference,
@@ -197,6 +225,9 @@ impl From<LimitSwitchBehavior> for u32 {
     }
 }
 
+/// # Panics
+/// panics if the given u32 is not a valid LimitSwitchBehavior i.e. multiple bits
+/// per section are set
 impl From<u32> for LimitSwitchBehavior {
     fn from(b: u32) -> Self {
         Self::from_u32(b).unwrap()
@@ -209,6 +240,7 @@ impl Display for LimitSwitchBehavior {
     }
 }
 
+/// Binding for values of [1.5.10 Setting the error correction mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum ErrorCorrectionMode {
     Off,
@@ -228,6 +260,7 @@ impl Display for ErrorCorrectionMode {
     }
 }
 
+/// Binding for values of [1.5.18 Reading out the error memory](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorError {
     LowVoltage = 0x1,
@@ -251,6 +284,7 @@ impl Display for MotorError {
     }
 }
 
+/// Helper binding for values of [1.5.23 Reading out the firmware version](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum HardwareType {
@@ -299,6 +333,7 @@ impl Display for HardwareType {
     }
 }
 
+/// Helper binding for values of [1.5.23 Reading out the firmware version](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum CommunicationType {
     USB,
@@ -325,6 +360,23 @@ impl Display for CommunicationType {
     }
 }
 
+/// Binding for values of [1.5.23 Reading out the firmware version](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+///
+/// Each of the four sections of the firmware version corresponds to a member
+/// of the struct.
+///
+/// # Examples
+/// ```
+/// # use nanotec_stepper_driver::{FirmwareVersion, HardwareType, CommunicationType};
+/// # use chrono::NaiveDate;
+/// let version = FirmwareVersion {
+///     hardware: HardwareType::SMCI47_S,
+///     communication: CommunicationType::RS485,
+///     release_date: NaiveDate::from_ymd(2011, 5, 17),
+///     revision: 3711,
+/// };
+/// assert_eq!("SMCI47-S_RS485_17-05-2011-rev3711", format!("{}", version))
+/// ```
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct FirmwareVersion {
     pub hardware: HardwareType,
@@ -333,7 +385,6 @@ pub struct FirmwareVersion {
     pub revision: u16,
 }
 
-/// Binding for values of [1.5.23 Reading out the firmware version](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A74%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
 impl FirmwareVersion {
     pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
         use nom::{bytes::complete::tag, sequence::tuple};
@@ -375,7 +426,7 @@ impl Display for FirmwareVersion {
     }
 }
 
-/// Binding for values of [1.5.25 Setting the function of the digital inputs](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A76%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C744%2Cnull%5D)
+/// Binding for values of [1.5.25 Setting the function of the digital inputs](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum DigitalInputFunction {
     UserDefined,
@@ -406,7 +457,7 @@ impl Display for DigitalInputFunction {
     }
 }
 
-/// Binding for values of [1.5.26 Setting the function of the digital outputs](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A78%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+/// Binding for values of [1.5.26 Setting the function of the digital outputs](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum DigitalOutputFunction {
     UserDefined,
@@ -427,7 +478,7 @@ impl Display for DigitalOutputFunction {
     }
 }
 
-/// Binding for values of [1.5.36 Setting the ramp type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A95%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C724%2Cnull%5D)
+/// Binding for values of [1.5.36 Setting the ramp type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RampType {
     Trapizoidal,
@@ -447,7 +498,7 @@ impl Display for RampType {
     }
 }
 
-/// Binding for values of [1.5.40 Setting baud rate of the controller](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A104%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+/// Binding for values of [1.5.40 Setting baud rate of the controller](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 ///
 /// Be aware that the numerical values of the enum **don't** correspond to the values
 /// of the baud rate.
@@ -479,7 +530,7 @@ impl Display for BaudRate {
     }
 }
 
-/// Binding for values of [1.6.2 Stopping a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A120%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C506%2Cnull%5D)
+/// Binding for values of [1.6.2 Stopping a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum MotorStop {
     QuickStop,
@@ -492,7 +543,7 @@ impl Display for MotorStop {
     }
 }
 
-/// Binding for values of [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+/// Binding for values of [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RespondMode {
     Quiet,
@@ -519,7 +570,7 @@ impl Display for RespondMode {
     }
 }
 
-/// Binding for values of [1.6.6 Setting the positioning mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A128%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C738%2Cnull%5D)
+/// Binding for values of [1.6.6 Setting the positioning mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum PositioningMode {
     Relative = 1,
@@ -555,7 +606,7 @@ impl Display for PositioningMode {
     }
 }
 
-/// Binding for values of [1.6.15 Setting the direction of rotation](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A143%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+/// Binding for values of [1.6.15 Setting the direction of rotation](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RotationDirection {
     Left,
@@ -576,7 +627,7 @@ impl Display for RotationDirection {
 
 /// Holds a Record
 ///
-/// See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
+/// See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Record {
     pub positioning_mode: PositioningMode,
