@@ -42,4 +42,9 @@
 mod driver;
 pub(crate) mod util;
 
-pub use driver::{cmd::*, motor::Motor, responsehandle::ResponseHandle, Driver, DriverError};
+pub use driver::{
+    cmd::*,
+    motor::{AllMotor, Motor},
+    responsehandle::ResponseHandle,
+    Driver, DriverError,
+};

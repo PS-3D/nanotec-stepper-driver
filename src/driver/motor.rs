@@ -27,6 +27,8 @@ use std::{
 };
 
 type DResult<T> = Result<T, DriverError>;
+/// temporary alias, should be changed in the future
+pub type AllMotor<I> = Motor<I>;
 
 // sends read command to motor
 // in theory a read command isn't diffrent than a write command, the

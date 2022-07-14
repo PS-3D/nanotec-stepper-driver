@@ -8,7 +8,7 @@ mod tests;
 
 use self::{
     cmd::{Msg, RespondMode},
-    motor::Motor,
+    motor::{AllMotor, Motor},
 };
 use crate::util::ensure;
 use nom::Finish;
@@ -388,7 +388,7 @@ impl<I: Write + Read> Driver<I> {
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
-    pub fn add_all_motor(&mut self) -> Result<Motor<I>, DriverError> {
+    pub fn add_all_motor(&mut self) -> Result<AllMotor<I>, DriverError> {
         let mut inner = self.inner.as_ref().borrow_mut();
         // TODO add special case for all instead of 0
         ensure!(!inner.all_exists, DriverError::AlreadyExists(0));
