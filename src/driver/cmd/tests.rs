@@ -4,7 +4,7 @@ use nom::Finish;
 use super::{
     CommunicationType, FirmwareVersion, HardwareType, LimitSwitchBehavior,
     LimitSwitchBehaviorNormal, LimitSwitchBehaviorReference, MotorAddress, MotorStop, MotorType,
-    Msg, PositioningMode, Record, RespondMode, RotationDirection,
+    Msg, MsgWrap, PositioningMode, Record, RespondMode, RotationDirection,
 };
 
 #[test]
@@ -284,4 +284,28 @@ fn msg_parse_no_payload() {
 #[should_panic]
 fn msg_parse_garbage() {
     let (_, _) = Msg::parse(b"gsrceitng").finish().unwrap();
+}
+
+#[test]
+fn msgwrap_parse_valid() {
+    let (_, w) = MsgWrap::parse(b"1A\r").finish().unwrap();
+    assert_eq!(
+        w,
+        MsgWrap::Valid(Msg {
+            address: MotorAddress::Single(1),
+            payload: b"A".to_vec(),
+        })
+    )
+}
+
+#[test]
+fn msgwrap_parse_invalid() {
+    let (_, w) = MsgWrap::parse(b"1A?\r").finish().unwrap();
+    assert_eq!(
+        w,
+        MsgWrap::Invalid(Msg {
+            address: MotorAddress::Single(1),
+            payload: b"A?".to_vec(),
+        })
+    )
 }
