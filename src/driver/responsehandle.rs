@@ -1,13 +1,15 @@
-use super::{DriverError, InnerDriver};
+use super::{cmd::MotorAddress, DriverError, InnerDriver};
 use std::{
     cell::RefCell,
     io::{Read, Write},
     marker::PhantomData,
     rc::Rc,
 };
+// TODO maybe wait macro?
 
 /// Handle to wait for a motor response
 pub trait ResponseHandle<T> {
+    // TODO maybe return handle again on some errors that are still recoverable
     /// Check the response for correctness and return the result contained in the
     /// response, if there was one. Usually only getters have a returnvalue. If
     /// the response only needs to be checked for correctness but no value is
@@ -109,13 +111,13 @@ where
 // sent and it also makes WriteResponseHandle::wait a bit faster
 pub(super) struct WriteResponseHandle<I: Write + Read> {
     driver: Rc<RefCell<InnerDriver<I>>>,
-    address: Option<u8>,
+    address: MotorAddress,
     // payload we sent
     sent: Vec<u8>,
 }
 
 impl<I: Write + Read> WriteResponseHandle<I> {
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: Option<u8>, sent: Vec<u8>) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress, sent: Vec<u8>) -> Self {
         Self {
             driver,
             address,
@@ -128,8 +130,8 @@ impl<I: Write + Read> ResponseHandle<()> for WriteResponseHandle<I> {
     fn wait(self) -> Result<(), DriverError> {
         let mut driver = self.driver.as_ref().borrow_mut();
         let payload = match self.address {
-            Some(a) => driver.receive_single(a)?,
-            None => driver.receive_all()?,
+            MotorAddress::Single(a) => driver.receive_single(a)?,
+            MotorAddress::All => driver.receive_all()?,
         };
         if self.sent == payload {
             Ok(())

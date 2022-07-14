@@ -7,7 +7,7 @@ pub mod responsehandle;
 mod tests;
 
 use self::{
-    cmd::{Msg, RespondMode},
+    cmd::{MotorAddress, Msg, RespondMode},
     motor::{AllMotor, Motor},
 };
 use crate::util::ensure;
@@ -31,7 +31,7 @@ pub enum DriverError {
     /// Thrown by [`Driver::add_motor`] if a motor with that address already
     /// exists in that driver
     #[error("motor already exists: {0}")]
-    AlreadyExists(u8),
+    AlreadyExists(MotorAddress),
     /// Thrown if any funtion in [`Motor`] receives a response that didn't match
     /// what was sent
     #[error("payloads from response and cmd don't match, response was {0:?}")]
@@ -43,7 +43,7 @@ pub enum DriverError {
     /// Thrown if a motor with an address the driver didn't know responded,
     /// meaning that `driver.add_motor(<address>)` wasn't called beforehand.
     #[error("unexpected motor with address {0} responded")]
-    UnexpectedResponse(u8),
+    UnexpectedResponse(MotorAddress),
     /// Thrown by a function in [`Motor`] if the given motor is already waiting
     /// on a response
     #[error("motor is already waiting on a response and therefore not available")]
@@ -152,12 +152,12 @@ impl<I: Write + Read> InnerDriver<I> {
             // simplify the receiving process
             loop {
                 let msg = self.receive_msg()?;
-                if let Some(a) = msg.address {
+                if let MotorAddress::Single(a) = msg.address {
                     let imotor = self
                         .motors
                         .get_mut(&a)
                         // if motor address was unknown
-                        .ok_or(DriverError::UnexpectedResponse(a))?;
+                        .ok_or(DriverError::UnexpectedResponse(MotorAddress::Single(a)))?;
                     imotor.available = true;
                     if a == address {
                         return Ok(msg.payload);
@@ -165,9 +165,8 @@ impl<I: Write + Read> InnerDriver<I> {
                         imotor.queue.push_back(msg.payload);
                     }
                 } else {
-                    // TODO add special case for all instead of 0
                     // if a motor responded to an all command
-                    return Err(DriverError::UnexpectedResponse(0));
+                    return Err(DriverError::UnexpectedResponse(MotorAddress::All));
                 }
             }
         }
@@ -181,8 +180,8 @@ impl<I: Write + Read> InnerDriver<I> {
             for _ in 0..self.all.as_ref().unwrap().0 {
                 let msg = self.receive_msg()?;
                 ensure!(
-                    msg.address.is_none(),
-                    DriverError::UnexpectedResponse(msg.address.unwrap())
+                    msg.address.is_all(),
+                    DriverError::UnexpectedResponse(msg.address)
                 );
                 // if were receiving there should be something in there
                 let all = self.all.as_mut().unwrap();
@@ -347,7 +346,7 @@ impl<I: Write + Read> Driver<I> {
         // Have to do it this way due to try_insert being nightly
         ensure!(
             !inner.motors.contains_key(&address),
-            DriverError::AlreadyExists(address)
+            DriverError::AlreadyExists(MotorAddress::Single(address))
         );
         inner
             .motors
@@ -360,7 +359,10 @@ impl<I: Write + Read> Driver<I> {
                     queue: VecDeque::with_capacity(4),
                 },
             );
-        Ok(Motor::new(self.inner.clone(), Some(address)))
+        Ok(Motor::new(
+            self.inner.clone(),
+            MotorAddress::Single(address),
+        ))
     }
 
     /// Returns a motor that represents all motors, the so-called all-motor.
@@ -390,9 +392,11 @@ impl<I: Write + Read> Driver<I> {
     /// ```
     pub fn add_all_motor(&mut self) -> Result<AllMotor<I>, DriverError> {
         let mut inner = self.inner.as_ref().borrow_mut();
-        // TODO add special case for all instead of 0
-        ensure!(!inner.all_exists, DriverError::AlreadyExists(0));
+        ensure!(
+            !inner.all_exists,
+            DriverError::AlreadyExists(MotorAddress::All)
+        );
         inner.all_exists = true;
-        Ok(Motor::new(self.inner.clone(), None))
+        Ok(Motor::new(self.inner.clone(), MotorAddress::All))
     }
 }

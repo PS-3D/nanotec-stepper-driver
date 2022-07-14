@@ -1,8 +1,8 @@
 use super::{
     cmd::{
         BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
-        FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop, MotorType, PositioningMode,
-        RampType, Record, RespondMode, RotationDirection, StepMode,
+        FirmwareVersion, LimitSwitchBehavior, MotorAddress, MotorError, MotorStop, MotorType,
+        PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
     parse::{parse_su16, parse_su32, parse_su64, parse_su8},
@@ -52,7 +52,7 @@ macro_rules! read {
         // able to distinguish the answers
         let address = $self
             .address
-            .expect("Can't send a read command to all motors");
+            .single_expect("Can't send a read command to all motors");
         let mut driver = $self.driver.as_ref().borrow_mut();
         assert_eq!(driver.get_respond_mode(address), RespondMode::NotQuiet);
         // send command
@@ -151,7 +151,7 @@ macro_rules! long_read {
 macro_rules! write {
     ($self:expr, $args:expr) => {{
         let rm = match $self.address {
-            Some(a) => {
+            MotorAddress::Single(a) => {
                 let mut driver = $self.driver.as_ref().borrow_mut();
                 let rm = driver.get_respond_mode(a);
                 if rm == RespondMode::NotQuiet {
@@ -161,7 +161,7 @@ macro_rules! write {
                 }
                 rm
             }
-            None => $self.driver.as_ref().borrow_mut().send_all($args)?,
+            MotorAddress::All => $self.driver.as_ref().borrow_mut().send_all($args)?,
         };
         if rm == RespondMode::NotQuiet {
             // unfortunately there isn't a better way rn.
@@ -302,13 +302,13 @@ macro_rules! long_write {
 #[derive(Debug)]
 pub struct Motor<I: Write + Read> {
     driver: Rc<RefCell<InnerDriver<I>>>,
-    address: Option<u8>,
+    address: MotorAddress,
 }
 
 // DResult<impl ResponseHandle<T>> is not an alias since aliases with
 // impl aren't supported yet
 impl<I: Write + Read> Motor<I> {
-    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: Option<u8>) -> Self {
+    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress) -> Self {
         Motor { driver, address }
     }
 
@@ -705,7 +705,7 @@ impl<I: Write + Read> Motor<I> {
         self.driver
             .as_ref()
             .borrow()
-            .get_respond_mode(self.address.expect("Can only read from one motor"))
+            .get_respond_mode(self.address.single_expect("Can only read from one motor"))
     }
 
     /// See [`set_respond_mode`][Motor::set_respond_mode]
@@ -737,7 +737,7 @@ impl<I: Write + Read> Motor<I> {
     /// responds to most commands and the other 2 are responsible for actually
     /// reading out records.
     pub fn set_respond_mode(&mut self, mode: RespondMode) -> DResult<impl ResponseHandle<()>> {
-        if let Some(a) = self.address {
+        if let MotorAddress::Single(a) = self.address {
             self.driver.as_ref().borrow_mut().set_respond_mode(a, mode);
         } else {
             self.driver.as_ref().borrow_mut().set_respond_mode_all(mode);
@@ -924,7 +924,7 @@ impl<I: Write + Read> Drop for Motor<I> {
     ///
     /// See also [here][`Drop`]
     fn drop(&mut self) {
-        if let Some(a) = self.address {
+        if let MotorAddress::Single(a) = self.address {
             self.driver.as_ref().borrow_mut().drop_motor(&a)
         } else {
             self.driver.as_ref().borrow_mut().drop_all_motor()

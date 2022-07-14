@@ -1,4 +1,7 @@
-use super::{cmd::RespondMode, Driver, DriverError};
+use super::{
+    cmd::{MotorAddress, RespondMode},
+    Driver, DriverError,
+};
 use nanotec_stepper_driver_test::Interface;
 
 #[test]
@@ -48,7 +51,10 @@ fn receive_single_other_motor() {
 
     let r = inner.receive_single(1);
 
-    assert!(matches!(r, Err(DriverError::UnexpectedResponse(2))));
+    assert!(matches!(
+        r,
+        Err(DriverError::UnexpectedResponse(MotorAddress::Single(2)))
+    ));
     assert!(interface.is_empty());
     assert!(inner.motors.get(&1).unwrap().available);
     assert!(inner.motors.get(&1).unwrap().queue.is_empty());
@@ -64,7 +70,10 @@ fn receive_single_all() {
 
     let r = inner.receive_single(1);
 
-    assert!(matches!(r, Err(DriverError::UnexpectedResponse(0))));
+    assert!(matches!(
+        r,
+        Err(DriverError::UnexpectedResponse(MotorAddress::All))
+    ));
     assert!(interface.is_empty());
     assert!(inner.motors.get(&1).unwrap().available);
     assert!(inner.motors.get(&1).unwrap().queue.is_empty());
@@ -96,7 +105,10 @@ fn receive_all_single() {
 
     let r = inner.receive_all();
 
-    assert!(matches!(r, Err(DriverError::UnexpectedResponse(1))));
+    assert!(matches!(
+        r,
+        Err(DriverError::UnexpectedResponse(MotorAddress::Single(1)))
+    ));
     assert!(interface.is_empty());
     assert_eq!(inner.all.as_ref().unwrap().0, 1);
     assert_eq!(inner.all.as_ref().unwrap().1, b"A".to_vec());
@@ -261,7 +273,10 @@ fn add_motor_already_exists() {
     let _m1 = driver.add_motor(1, RespondMode::Quiet).unwrap();
     let r = driver.add_motor(1, RespondMode::NotQuiet);
 
-    assert!(matches!(r, Err(DriverError::AlreadyExists(1))));
+    assert!(matches!(
+        r,
+        Err(DriverError::AlreadyExists(MotorAddress::Single(1)))
+    ));
     assert_eq!(driver.inner.borrow().motors.len(), 1);
 }
 
@@ -303,7 +318,10 @@ fn add_all_motor_already_exists() {
     let _a1 = driver.add_all_motor().unwrap();
     let r = driver.add_all_motor();
 
-    assert!(matches!(r, Err(DriverError::AlreadyExists(0))));
+    assert!(matches!(
+        r,
+        Err(DriverError::AlreadyExists(MotorAddress::All))
+    ));
     assert!(driver.inner.borrow().all_exists);
 }
 

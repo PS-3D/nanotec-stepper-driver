@@ -3,8 +3,8 @@ use nom::Finish;
 
 use super::{
     CommunicationType, FirmwareVersion, HardwareType, LimitSwitchBehavior,
-    LimitSwitchBehaviorNormal, LimitSwitchBehaviorReference, MotorStop, MotorType, Msg,
-    PositioningMode, Record, RespondMode, RotationDirection,
+    LimitSwitchBehaviorNormal, LimitSwitchBehaviorReference, MotorAddress, MotorStop, MotorType,
+    Msg, PositioningMode, Record, RespondMode, RotationDirection,
 };
 
 #[test]
@@ -220,7 +220,7 @@ fn record_parse() {
 fn msg_parse_long_write() {
     let (_, m) = Msg::parse(b"1:Keyword=1337\r").finish().unwrap();
     let expected = Msg {
-        address: Some(1),
+        address: MotorAddress::Single(1),
         payload: b":Keyword=1337".to_vec(),
     };
     assert_eq!(m, expected)
@@ -230,7 +230,7 @@ fn msg_parse_long_write() {
 fn msg_parse_long_read() {
     let (_, m) = Msg::parse(b"1:CL_motor_type+1\r").finish().unwrap();
     let expected = Msg {
-        address: Some(1),
+        address: MotorAddress::Single(1),
         payload: b":CL_motor_type+1".to_vec(),
     };
     assert_eq!(m, expected)
@@ -240,7 +240,7 @@ fn msg_parse_long_read() {
 fn msg_parse_short_no_arg() {
     let (_, m) = Msg::parse(b"1A\r").finish().unwrap();
     let expected = Msg {
-        address: Some(1),
+        address: MotorAddress::Single(1),
         payload: b"A".to_vec(),
     };
     assert_eq!(m, expected)
@@ -250,7 +250,7 @@ fn msg_parse_short_no_arg() {
 fn msg_parse_all() {
     let (_, m) = Msg::parse(b"*S+1\r").finish().unwrap();
     let expected = Msg {
-        address: None,
+        address: MotorAddress::All,
         payload: b"S+1".to_vec(),
     };
     assert_eq!(m, expected)
