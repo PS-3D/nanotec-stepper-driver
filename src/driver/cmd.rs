@@ -17,7 +17,6 @@ use chrono::naive::NaiveDate;
 use nom::{
     self,
     character::complete::{i32 as parse_i32, u16 as parse_u16, u8 as parse_u8},
-    error::FromExternalError,
     IResult, Parser,
 };
 use num_derive::FromPrimitive;
@@ -28,22 +27,30 @@ use thiserror::Error;
 /// Gets thrown when there is an error while parsing the various enums which
 /// represent values for the commands
 #[derive(Error, Debug)]
-enum ParseError {
+pub enum ParseError<I: Debug> {
     /// Gets thrown when a a value of a command doesn't have a matching enum variant,
     /// which usually means it's too big.
     #[error("Invalid Value while Parsing, probably too big")]
     InvalidValue,
+    /// Wrapper around [`nom::error::Error`]
+    #[error("nom error: {0:?}")]
+    NomError(nom::error::Error<I>),
 }
 
-impl ParseError {
-    fn into_nom_error<I>(self, input: I) -> nom::Err<nom::error::Error<I>> {
-        match self {
-            ParseError::InvalidValue => nom::Err::Failure(nom::error::Error::from_external_error(
-                input,
-                nom::error::ErrorKind::TooLarge,
-                self,
-            )),
-        }
+impl<I: Debug> nom::error::ParseError<I> for ParseError<I> {
+    fn from_error_kind(input: I, kind: nom::error::ErrorKind) -> Self {
+        Self::NomError(nom::error::Error::from_error_kind(input, kind))
+    }
+
+    /// basically copied from nom::error::Error::append
+    fn append(_: I, _: nom::error::ErrorKind, other: Self) -> Self {
+        other
+    }
+}
+
+impl<I: Debug> From<nom::error::Error<I>> for ParseError<I> {
+    fn from(e: nom::error::Error<I>) -> Self {
+        Self::NomError(e)
     }
 }
 
@@ -52,15 +59,15 @@ fn parse_enum_value<'a, P, C, O, O2>(
     s: &'a [u8],
     parser: P,
     constructor: C,
-) -> IResult<&'a [u8], O2, nom::error::Error<&'a [u8]>>
+) -> IResult<&'a [u8], O2, ParseError<&'a [u8]>>
 where
     P: Fn(&'a [u8]) -> IResult<&'a [u8], O, nom::error::Error<&'a [u8]>>,
     C: Fn(O) -> Option<O2>,
 {
-    let (rem, res) = parser(s)?;
+    let (rem, res) = parser(s).map_err(|e| nom::Err::convert(e))?;
     Ok((
         rem,
-        constructor(res).ok_or(ParseError::InvalidValue.into_nom_error(s))?,
+        constructor(res).ok_or(nom::Err::Error(ParseError::InvalidValue))?,
     ))
 }
 
@@ -73,7 +80,7 @@ pub enum MotorType {
 }
 
 impl MotorType {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, MotorType::from_u8)
     }
 }
@@ -101,7 +108,7 @@ pub enum StepMode {
 }
 
 impl StepMode {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, StepMode::from_u8)
     }
 }
@@ -165,7 +172,7 @@ pub struct LimitSwitchBehavior {
 }
 
 impl LimitSwitchBehavior {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         let (rem, res) = parse_su32(s)?;
         if let Some(l) = Self::from_u32(res) {
             Ok((rem, l))
@@ -266,7 +273,7 @@ pub enum ErrorCorrectionMode {
 }
 
 impl ErrorCorrectionMode {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, Self::from_u8)
     }
 }
@@ -290,7 +297,7 @@ pub enum MotorError {
 }
 
 impl MotorError {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, Self::from_u8)
     }
 }
@@ -317,7 +324,7 @@ pub enum HardwareType {
 }
 
 impl HardwareType {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         use nom::{branch::alt, bytes::complete::tag};
         alt((
             tag("SMCI47-S").map(|_| HardwareType::SMCI47_S),
@@ -358,7 +365,7 @@ pub enum CommunicationType {
 }
 
 impl CommunicationType {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         use nom::{branch::alt, bytes::complete::tag};
         alt((
             tag("USB").map(|_| CommunicationType::USB),
@@ -403,7 +410,7 @@ pub struct FirmwareVersion {
 }
 
 impl FirmwareVersion {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         use nom::{bytes::complete::tag, sequence::tuple};
         tuple((
             HardwareType::parse,
@@ -463,7 +470,7 @@ pub enum DigitalInputFunction {
 }
 
 impl DigitalInputFunction {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, Self::from_u8)
     }
 }
@@ -484,7 +491,7 @@ pub enum DigitalOutputFunction {
 }
 
 impl DigitalOutputFunction {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, Self::from_u8)
     }
 }
@@ -504,7 +511,7 @@ pub enum RampType {
 }
 
 impl RampType {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, RampType::from_u8)
     }
 }
@@ -536,7 +543,7 @@ pub enum BaudRate {
 }
 
 impl BaudRate {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, BaudRate::from_u8)
     }
 }
@@ -568,7 +575,7 @@ pub enum RespondMode {
 }
 
 impl RespondMode {
-    pub(super) fn parse<'b>(s: &'b [u8]) -> IResult<&'b [u8], Self> {
+    pub(super) fn parse<'b>(s: &'b [u8]) -> IResult<&'b [u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, RespondMode::from_u8)
     }
 
@@ -612,7 +619,7 @@ pub enum PositioningMode {
 }
 
 impl PositioningMode {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, PositioningMode::from_u8)
     }
 }
@@ -631,7 +638,7 @@ pub enum RotationDirection {
 }
 
 impl RotationDirection {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, RotationDirection::from_u8)
     }
 }
@@ -664,7 +671,7 @@ pub struct Record {
 }
 
 impl Record {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         use nom::{
             bytes::complete::tag,
             sequence::{preceded, tuple},
@@ -729,7 +736,7 @@ pub enum MotorAddress {
 }
 
 impl MotorAddress {
-    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub(super) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         use nom::{branch::alt, bytes::complete::tag};
         alt((
             tag("*").map(|_| Self::All),
@@ -799,9 +806,37 @@ pub(super) struct Msg {
     pub payload: Vec<u8>,
 }
 
+/// Gets thrown if there is an error parsing Msg
+#[derive(Error, Debug)]
+pub(super) enum MsgError<I: Debug> {
+    /// Thrown if the motor finds the message is invalid
+    #[error("{0:?}")]
+    InvalidCmd(I),
+    /// Wrapper around [`ParseError`]
+    #[error("{0}")]
+    ParseError(ParseError<I>),
+}
+
+impl<I: Debug> nom::error::ParseError<I> for MsgError<I> {
+    fn from_error_kind(input: I, kind: nom::error::ErrorKind) -> Self {
+        Self::ParseError(ParseError::from_error_kind(input, kind))
+    }
+
+    /// basically copied from nom::error::Error::append
+    fn append(_: I, _: nom::error::ErrorKind, other: Self) -> Self {
+        other
+    }
+}
+
+impl<I: Debug> From<ParseError<I>> for MsgError<I> {
+    fn from(e: ParseError<I>) -> Self {
+        Self::ParseError(e)
+    }
+}
+
 // TODO impl ? operator
 impl Msg {
-    pub fn parse(s: &[u8]) -> IResult<&[u8], Self> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self, MsgError<&[u8]>> {
         use nom::{
             bytes::complete::{tag, take_until1},
             sequence::{terminated, tuple},
@@ -816,5 +851,6 @@ impl Msg {
             payload: p.to_vec(),
         })
         .parse(s)
+        .map_err(|e| nom::Err::convert(e))
     }
 }

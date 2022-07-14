@@ -7,7 +7,7 @@ pub mod responsehandle;
 mod tests;
 
 use self::{
-    cmd::{MotorAddress, Msg, RespondMode},
+    cmd::{MotorAddress, Msg, MsgError, ParseError, RespondMode},
     motor::{AllMotor, Motor},
 };
 use crate::util::ensure;
@@ -48,27 +48,35 @@ pub enum DriverError {
     /// on a response
     #[error("motor is already waiting on a response and therefore not available")]
     NotAvailable,
+    /// Thrown if the motor finds the message is invalid
+    #[error("{0:?}")]
+    InvalidCmd(Vec<u8>),
     /// Wrapper around [`io::Error`]
     #[error(transparent)]
     IoError(#[from] io::Error),
     /// Wrapper arund [`nom::error::Error`]
-    #[error("error {:?} while parsing message {:?}", .0.code, .0.input)]
-    ParsingError(nom::error::Error<Vec<u8>>),
+    #[error("{0}")]
+    ParsingError(ParseError<Vec<u8>>),
 }
 
-// dunno why, but derive won't work
-impl From<nom::error::Error<Vec<u8>>> for DriverError {
-    fn from(e: nom::error::Error<Vec<u8>>) -> Self {
-        Self::ParsingError(e)
+impl From<ParseError<&[u8]>> for DriverError {
+    fn from(e: ParseError<&[u8]>) -> Self {
+        Self::ParsingError(match e {
+            ParseError::InvalidValue => ParseError::InvalidValue,
+            ParseError::NomError(e) => ParseError::NomError(nom::error::Error {
+                input: e.input.to_vec(),
+                code: e.code,
+            }),
+        })
     }
 }
 
-impl From<nom::error::Error<&[u8]>> for DriverError {
-    fn from(e: nom::error::Error<&[u8]>) -> Self {
-        Self::ParsingError(nom::error::Error {
-            input: e.input.to_vec(),
-            code: e.code,
-        })
+impl From<MsgError<&[u8]>> for DriverError {
+    fn from(e: MsgError<&[u8]>) -> Self {
+        match e {
+            MsgError::InvalidCmd(msg) => DriverError::InvalidCmd(msg.to_vec()),
+            MsgError::ParseError(e) => e.into(),
+        }
     }
 }
 
@@ -113,13 +121,7 @@ impl<I: Write + Read> InnerDriver<I> {
         // size chosen more or less randomly, should fit most messages
         let mut buf = Vec::with_capacity(64);
         self.interface.read_until(b'\r', &mut buf)?;
-        let (_, msg) = Msg::parse(&buf)
-            .finish()
-            // map is needed since value in error cant be reference
-            .map_err(|b| nom::error::Error {
-                input: b.input.to_vec(),
-                code: b.code,
-            })?;
+        let (_, msg) = Msg::parse(&buf).finish()?;
         Ok(msg)
     }
 

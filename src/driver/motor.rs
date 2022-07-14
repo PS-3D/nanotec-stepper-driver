@@ -2,7 +2,7 @@ use super::{
     cmd::{
         BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
         FirmwareVersion, LimitSwitchBehavior, MotorAddress, MotorError, MotorStop, MotorType,
-        PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
+        ParseError, PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
     },
     map,
     parse::{parse_su16, parse_su32, parse_su64, parse_su8},
@@ -66,15 +66,11 @@ macro_rules! read {
                     $parser
                         .parse(input)
                         .finish()
-                        .map_err(|_: nom::error::Error<&[u8]>| {
+                        .map_err(|_: ParseError<&[u8]>| {
                             DriverError::NonMatchingPayloads(input.to_vec())
                         })?;
                 if !remainder.is_empty() {
-                    // TODO make own errorkind, adjust doc for wait
-                    Err(DriverError::ParsingError(nom::error::Error {
-                        input: remainder.to_vec(),
-                        code: nom::error::ErrorKind::TooLarge,
-                    }))
+                    Err(DriverError::NonMatchingPayloads(input.to_vec()))
                 } else {
                     Ok(t)
                 }
