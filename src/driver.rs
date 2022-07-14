@@ -7,7 +7,7 @@ pub mod responsehandle;
 mod tests;
 
 use self::{
-    cmd::{MotorAddress, Msg, MsgError, ParseError, RespondMode},
+    cmd::{MotorAddress, Msg, MsgWrap, ParseError, RespondMode},
     motor::{AllMotor, Motor},
 };
 use crate::util::ensure;
@@ -48,7 +48,7 @@ pub enum DriverError {
     /// on a response
     #[error("motor is already waiting on a response and therefore not available")]
     NotAvailable,
-    /// Thrown if the motor finds the message is invalid
+    /// Thrown if the motor finds the command to be invalid
     #[error("{0:?}")]
     InvalidCmd(Vec<u8>),
     /// Wrapper around [`io::Error`]
@@ -68,15 +68,6 @@ impl From<ParseError<&[u8]>> for DriverError {
                 code: e.code,
             }),
         })
-    }
-}
-
-impl From<MsgError<&[u8]>> for DriverError {
-    fn from(e: MsgError<&[u8]>) -> Self {
-        match e {
-            MsgError::InvalidCmd(msg) => DriverError::InvalidCmd(msg.to_vec()),
-            MsgError::ParseError(e) => e.into(),
-        }
     }
 }
 
@@ -121,8 +112,11 @@ impl<I: Write + Read> InnerDriver<I> {
         // size chosen more or less randomly, should fit most messages
         let mut buf = Vec::with_capacity(64);
         self.interface.read_until(b'\r', &mut buf)?;
-        let (_, msg) = Msg::parse(&buf).finish()?;
-        Ok(msg)
+        let (_, wrap) = MsgWrap::parse(&buf).finish()?;
+        match wrap {
+            MsgWrap::Valid(msg) => Ok(msg),
+            MsgWrap::Invalid(msg) => Err(DriverError::InvalidCmd(msg.payload)),
+        }
     }
 
     pub fn get_respond_mode(&self, address: u8) -> RespondMode {

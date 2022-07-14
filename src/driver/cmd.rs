@@ -806,37 +806,8 @@ pub(super) struct Msg {
     pub payload: Vec<u8>,
 }
 
-/// Gets thrown if there is an error parsing Msg
-#[derive(Error, Debug)]
-pub(super) enum MsgError<I: Debug> {
-    /// Thrown if the motor finds the message is invalid
-    #[error("{0:?}")]
-    InvalidCmd(I),
-    /// Wrapper around [`ParseError`]
-    #[error("{0}")]
-    ParseError(ParseError<I>),
-}
-
-impl<I: Debug> nom::error::ParseError<I> for MsgError<I> {
-    fn from_error_kind(input: I, kind: nom::error::ErrorKind) -> Self {
-        Self::ParseError(ParseError::from_error_kind(input, kind))
-    }
-
-    /// basically copied from nom::error::Error::append
-    fn append(_: I, _: nom::error::ErrorKind, other: Self) -> Self {
-        other
-    }
-}
-
-impl<I: Debug> From<ParseError<I>> for MsgError<I> {
-    fn from(e: ParseError<I>) -> Self {
-        Self::ParseError(e)
-    }
-}
-
-// TODO impl ? operator
 impl Msg {
-    pub fn parse(s: &[u8]) -> IResult<&[u8], Self, MsgError<&[u8]>> {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         use nom::{
             bytes::complete::{tag, take_until1},
             sequence::{terminated, tuple},
@@ -852,5 +823,25 @@ impl Msg {
         })
         .parse(s)
         .map_err(|e| nom::Err::convert(e))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub(super) enum MsgWrap {
+    Valid(Msg),
+    Invalid(Msg),
+}
+
+impl MsgWrap {
+    pub fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
+        Msg::parse
+            .map(|msg| {
+                if msg.payload.ends_with(b"?") {
+                    Self::Invalid(msg)
+                } else {
+                    Self::Valid(msg)
+                }
+            })
+            .parse(s)
     }
 }
