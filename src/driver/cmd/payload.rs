@@ -46,15 +46,15 @@ impl Display for MotorType {
 /// Binding for values of [1.5.6 Setting the step mode](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum StepMode {
-    One = 1,
-    Two = 2,
-    Four = 4,
-    Five = 5,
-    Eight = 8,
-    Ten = 10,
-    Sixteen = 16,
-    Thirtytwo = 32,
-    Sixtyfour = 64,
+    S1 = 1,
+    S2 = 2,
+    S4 = 4,
+    S5 = 5,
+    S8 = 8,
+    S10 = 10,
+    S16 = 16,
+    S32 = 32,
+    S64 = 64,
     Feedrate = 254,
     Adaptive = 255,
 }
