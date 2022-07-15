@@ -38,7 +38,7 @@ fn single() {
     interface.add_cmd_echo(b"#1P0\r");
     m1.set_record_pause(0).unwrap().wait().unwrap();
     interface.add_cmd_echo(b"#1N0\r");
-    m1.set_continuation_record(0).unwrap().wait().unwrap();
+    m1.set_continuation_record(None).unwrap().wait().unwrap();
     interface.add_cmd_echo(b"#1:b17\r");
     m1.set_max_accel_jerk(17).unwrap().wait().unwrap();
     interface.add_cmd_echo(b"#1:B17\r");

@@ -267,7 +267,7 @@ macro_rules! long_write {
 /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 ///
 /// m1.load_record(3).unwrap().wait().unwrap();
-/// m1.set_continuation_record(0).unwrap().wait().unwrap();
+/// m1.set_continuation_record(None).unwrap().wait().unwrap();
 /// m1.start_motor().unwrap().wait().unwrap();
 ///
 /// let steps = m1.get_travel_distance().unwrap().wait().unwrap();
@@ -887,14 +887,29 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::RECORD_PAUSE, n)
     }
 
-    pub fn get_continuation_record(&mut self) -> DResult<impl ResponseHandle<u8>> {
-        short_read!(self, map::CONTINUATION_RECORD, parse_su8)
+    pub fn get_continuation_record(&mut self) -> DResult<impl ResponseHandle<Option<u8>>> {
+        short_read!(
+            self,
+            map::CONTINUATION_RECORD,
+            parse_su8.map(|r| {
+                if r == 0 {
+                    None
+                } else {
+                    Some(r)
+                }
+            })
+        )
     }
 
-    // TODO make option for no continuation record
-    pub fn set_continuation_record(&mut self, n: u8) -> DResult<impl ResponseHandle<()>> {
-        ensure!(n <= 32, DriverError::InvalidArgument);
-        short_write!(self, map::CONTINUATION_RECORD, n)
+    pub fn set_continuation_record(&mut self, n: Option<u8>) -> DResult<impl ResponseHandle<()>> {
+        let r = match n {
+            Some(r) => {
+                ensure!(r <= 32 && r >= 1, DriverError::InvalidArgument);
+                r
+            }
+            None => 0,
+        };
+        short_write!(self, map::CONTINUATION_RECORD, r)
     }
 
     pub fn get_max_accel_jerk(&mut self) -> DResult<impl ResponseHandle<u32>> {

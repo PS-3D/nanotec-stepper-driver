@@ -30,7 +30,7 @@
 //! let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 //!
 //! m1.load_record(3).unwrap().wait().unwrap();
-//! m1.set_continuation_record(0).unwrap().wait().unwrap();
+//! m1.set_continuation_record(None).unwrap().wait().unwrap();
 //! m1.start_motor().unwrap().wait().unwrap();
 //!
 //! let steps = m1.get_travel_distance().unwrap().wait().unwrap();
