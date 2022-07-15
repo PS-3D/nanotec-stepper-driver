@@ -1,11 +1,14 @@
 use super::{
     cmd::{
-        BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
-        FirmwareVersion, LimitSwitchBehavior, MotorAddress, MotorError, MotorStop, MotorType,
-        ParseError, PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
+        frame::MotorAddress,
+        payload::{
+            BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
+            FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop, MotorType,
+            PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
+        },
     },
     map,
-    parse::{parse_su16, parse_su32, parse_su64, parse_su8},
+    parse::{parse_su16, parse_su32, parse_su64, parse_su8, ParseError},
     responsehandle::{
         DummyResponseHandle, ReadResponseHandle, ResponseHandle, WrapperResponseHandle,
         WriteResponseHandle,

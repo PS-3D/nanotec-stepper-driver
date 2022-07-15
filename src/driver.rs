@@ -1,14 +1,19 @@
+#[cfg(test)]
+mod tests;
+
 pub mod cmd;
 mod map;
 pub mod motor;
 mod parse;
 pub mod responsehandle;
-#[cfg(test)]
-mod tests;
 
 use self::{
-    cmd::{MotorAddress, Msg, MsgWrap, ParseError, RespondMode},
+    cmd::{
+        frame::{MotorAddress, Msg, MsgWrap},
+        payload::RespondMode,
+    },
     motor::{AllMotor, Motor},
+    parse::ParseError,
 };
 use crate::util::ensure;
 use nom::Finish;
@@ -20,6 +25,12 @@ use std::{
     rc::Rc,
 };
 use thiserror::Error;
+
+// unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
+// stable yet, we gotta put comments in between the different sections. otherwise
+// its just too much
+
+//
 
 /// Errors returned by any part of the driver
 // TODO improve error granularity
@@ -70,6 +81,8 @@ impl From<ParseError<&[u8]>> for DriverError {
         })
     }
 }
+
+//
 
 #[derive(Debug)]
 struct InnerMotor {
@@ -254,6 +267,8 @@ impl<I: Write + Read> InnerDriver<I> {
         }
     }
 }
+
+//
 
 /// Represents a single Rs485 connection with motors attached to it
 ///

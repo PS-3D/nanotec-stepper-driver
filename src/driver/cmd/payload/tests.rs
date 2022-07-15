@@ -1,11 +1,16 @@
+use super::{
+    CommunicationType, FirmwareVersion, HardwareType, LimitSwitchBehavior,
+    LimitSwitchBehaviorNormal, LimitSwitchBehaviorReference, MotorStop, MotorType, PositioningMode,
+    Record, RespondMode, RotationDirection,
+};
 use chrono::naive::NaiveDate;
 use nom::Finish;
 
-use super::{
-    CommunicationType, FirmwareVersion, HardwareType, LimitSwitchBehavior,
-    LimitSwitchBehaviorNormal, LimitSwitchBehaviorReference, MotorAddress, MotorStop, MotorType,
-    Msg, MsgWrap, PositioningMode, Record, RespondMode, RotationDirection,
-};
+// unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
+// stable yet, we gotta put comments in between the different sections. otherwise
+// its just too much
+
+//
 
 #[test]
 fn motortype_parse() {
@@ -26,6 +31,8 @@ fn motortype_parse_garbage() {
     let (_, _) = MotorType::parse(b"asdf").finish().unwrap();
 }
 
+//
+
 #[test]
 fn limitswitchbehavior_parse() {
     let (_, l) = LimitSwitchBehavior::parse(b"+17425").finish().unwrap();
@@ -45,12 +52,16 @@ fn limitswitchbehavior_multiple() {
     let (_, _) = LimitSwitchBehavior::parse(b"+8725").finish().unwrap();
 }
 
+//
+
 #[test]
 fn motortype_display() {
     let s = format!("{}", MotorType::BLDCHall);
     let expected = "1";
     assert_eq!(expected, s)
 }
+
+//
 
 #[test]
 fn hardwaretype_parse() {
@@ -66,6 +77,8 @@ fn hardwaretype_display() {
     assert_eq!(expected, s)
 }
 
+//
+
 #[test]
 fn communicationtype_parse() {
     let (_, t) = CommunicationType::parse(b"RS485").finish().unwrap();
@@ -79,6 +92,8 @@ fn communicationtype_display() {
     let expected = "RS485";
     assert_eq!(expected, s)
 }
+
+//
 
 #[test]
 fn firmwareversion_parse() {
@@ -107,6 +122,8 @@ fn firmwareversion_display() {
     assert_eq!(expected, s)
 }
 
+//
+
 #[test]
 fn motorstop_display() {
     let s = format!("{}", MotorStop::QuickStop);
@@ -114,12 +131,16 @@ fn motorstop_display() {
     assert_eq!(expected, s)
 }
 
+//
+
 #[test]
 fn respondmode_parse() {
     let (_, m) = RespondMode::parse(b"+0").finish().unwrap();
     let expected = RespondMode::Quiet;
     assert_eq!(m, expected)
 }
+
+//
 
 #[test]
 #[should_panic]
@@ -139,6 +160,8 @@ fn respondmode_display() {
     let expected = "1";
     assert_eq!(expected, s)
 }
+
+//
 
 #[test]
 fn positioningmode_parse() {
@@ -166,6 +189,8 @@ fn positioningmode_display() {
     assert_eq!(expected, s)
 }
 
+//
+
 #[test]
 fn rotationdirection_parse() {
     let (_, d) = RotationDirection::parse(b"+1").finish().unwrap();
@@ -192,6 +217,8 @@ fn rotationdirection_display() {
     assert_eq!(expected, s)
 }
 
+//
+
 #[test]
 fn record_parse() {
     let (_, r) = Record::parse(b"p+1s+400u+400o+1000n+1000b+2364B+0d+0t+0W+1P+0N+0:b+1:B+0")
@@ -214,98 +241,4 @@ fn record_parse() {
         max_brake_jerk: 0,
     };
     assert_eq!(r, expected);
-}
-
-#[test]
-fn msg_parse_long_write() {
-    let (_, m) = Msg::parse(b"1:Keyword=1337\r").finish().unwrap();
-    let expected = Msg {
-        address: MotorAddress::Single(1),
-        payload: b":Keyword=1337".to_vec(),
-    };
-    assert_eq!(m, expected)
-}
-
-#[test]
-fn msg_parse_long_read() {
-    let (_, m) = Msg::parse(b"1:CL_motor_type+1\r").finish().unwrap();
-    let expected = Msg {
-        address: MotorAddress::Single(1),
-        payload: b":CL_motor_type+1".to_vec(),
-    };
-    assert_eq!(m, expected)
-}
-
-#[test]
-fn msg_parse_short_no_arg() {
-    let (_, m) = Msg::parse(b"1A\r").finish().unwrap();
-    let expected = Msg {
-        address: MotorAddress::Single(1),
-        payload: b"A".to_vec(),
-    };
-    assert_eq!(m, expected)
-}
-
-#[test]
-fn msg_parse_all() {
-    let (_, m) = Msg::parse(b"*S+1\r").finish().unwrap();
-    let expected = Msg {
-        address: MotorAddress::All,
-        payload: b"S+1".to_vec(),
-    };
-    assert_eq!(m, expected)
-}
-
-#[test]
-#[should_panic]
-fn msg_parse_no_return() {
-    let (_, _) = Msg::parse(b"*S+1").finish().unwrap();
-}
-
-#[test]
-#[should_panic]
-fn msg_parse_no_addr() {
-    let (_, _) = Msg::parse(b"S+1\r").finish().unwrap();
-}
-
-#[test]
-#[should_panic]
-fn msg_parse_addr_oob() {
-    let (_, _) = Msg::parse(b"1337S+1\r").finish().unwrap();
-}
-
-#[test]
-#[should_panic]
-fn msg_parse_no_payload() {
-    let (_, _) = Msg::parse(b"1\r").finish().unwrap();
-}
-
-#[test]
-#[should_panic]
-fn msg_parse_garbage() {
-    let (_, _) = Msg::parse(b"gsrceitng").finish().unwrap();
-}
-
-#[test]
-fn msgwrap_parse_valid() {
-    let (_, w) = MsgWrap::parse(b"1A\r").finish().unwrap();
-    assert_eq!(
-        w,
-        MsgWrap::Valid(Msg {
-            address: MotorAddress::Single(1),
-            payload: b"A".to_vec(),
-        })
-    )
-}
-
-#[test]
-fn msgwrap_parse_invalid() {
-    let (_, w) = MsgWrap::parse(b"1A?\r").finish().unwrap();
-    assert_eq!(
-        w,
-        MsgWrap::Invalid(Msg {
-            address: MotorAddress::Single(1),
-            payload: b"A?".to_vec(),
-        })
-    )
 }

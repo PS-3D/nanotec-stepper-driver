@@ -1,5 +1,5 @@
 use super::{
-    cmd::{MotorAddress, RespondMode},
+    cmd::{frame::MotorAddress, payload::RespondMode},
     Driver, DriverError,
 };
 use nanotec_stepper_driver_test::Interface;

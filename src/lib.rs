@@ -43,7 +43,7 @@ mod driver;
 pub(crate) mod util;
 
 pub use driver::{
-    cmd::*,
+    cmd::{frame::MotorAddress, payload::*},
     motor::{AllMotor, Motor},
     responsehandle::ResponseHandle,
     Driver, DriverError,

@@ -1,11 +1,18 @@
-use super::{cmd::MotorAddress, DriverError, InnerDriver};
+use super::{cmd::frame::MotorAddress, DriverError, InnerDriver};
 use std::{
     cell::RefCell,
     io::{Read, Write},
     marker::PhantomData,
     rc::Rc,
 };
+
 // TODO maybe wait macro?
+
+// unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
+// stable yet, we gotta put comments in between the different sections. otherwise
+// its just too much
+
+//
 
 /// Handle to wait for a motor response
 pub trait ResponseHandle<T> {
@@ -64,6 +71,8 @@ pub trait ResponseHandle<T> {
     fn wait(self) -> Result<T, DriverError>;
 }
 
+//
+
 pub(super) struct ReadResponseHandle<I: Write + Read, T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
@@ -105,6 +114,8 @@ where
     }
 }
 
+//
+
 // Implementation for write commands
 // implementations for read and write were split so we don't need to parse as much
 // since for write commands we only need to check if the payload matched what we
@@ -141,6 +152,8 @@ impl<I: Write + Read> ResponseHandle<()> for WriteResponseHandle<I> {
     }
 }
 
+//
+
 // Responsehandle for motors with RespondMode::Quiet
 pub(super) struct DummyResponseHandle();
 
@@ -155,6 +168,8 @@ impl ResponseHandle<()> for DummyResponseHandle {
         Ok(())
     }
 }
+
+//
 
 // Wrapper so we can return Write and Dummy, read is not needed since read
 // commands always return a value
