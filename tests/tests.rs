@@ -1,5 +1,5 @@
 use nanotec_stepper_driver::{
-    Driver, PositioningMode, Record, RespondMode, ResponseHandle, RotationDirection,
+    Driver, PositioningMode, Record, Repetitions, RespondMode, ResponseHandle, RotationDirection,
 };
 use nanotec_stepper_driver_test::Interface;
 
@@ -34,7 +34,10 @@ fn single() {
         .wait()
         .unwrap();
     interface.add_cmd_echo(b"#1W1\r");
-    m1.set_repetitions(1).unwrap().wait().unwrap();
+    m1.set_repetitions(Repetitions::N(1))
+        .unwrap()
+        .wait()
+        .unwrap();
     interface.add_cmd_echo(b"#1P0\r");
     m1.set_record_pause(0).unwrap().wait().unwrap();
     interface.add_cmd_echo(b"#1N0\r");

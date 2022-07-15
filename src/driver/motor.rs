@@ -4,7 +4,8 @@ use super::{
         payload::{
             BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
             FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStop, MotorType,
-            PositioningMode, RampType, Record, RespondMode, RotationDirection, StepMode,
+            PositioningMode, RampType, Record, Repetitions, RespondMode, RotationDirection,
+            StepMode,
         },
     },
     map,
@@ -869,13 +870,14 @@ impl<I: Write + Read> Motor<I> {
         short_write!(self, map::ROTATION_DIRECTION_CHANGE, change as u8)
     }
 
-    // TODO maybe work out better type since 0 means endless
-    pub fn get_repetitions(&mut self) -> DResult<impl ResponseHandle<u32>> {
-        short_read!(self, map::REPETITIONS, parse_su32)
+    pub fn get_repetitions(&mut self) -> DResult<impl ResponseHandle<Repetitions>> {
+        short_read!(self, map::REPETITIONS, Repetitions::parse)
     }
 
-    pub fn set_repetitions(&mut self, n: u32) -> DResult<impl ResponseHandle<()>> {
-        ensure!(n <= 254, DriverError::InvalidArgument);
+    pub fn set_repetitions(&mut self, n: Repetitions) -> DResult<impl ResponseHandle<()>> {
+        if let Repetitions::N(r) = n {
+            ensure!(r <= 254, DriverError::InvalidArgument);
+        }
         short_write!(self, map::REPETITIONS, n)
     }
 

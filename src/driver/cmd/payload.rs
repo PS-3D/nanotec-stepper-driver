@@ -635,6 +635,35 @@ impl Display for RotationDirection {
 
 //
 
+/// Binding for values of [1.6.17 Setting the repetitions](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum Repetitions {
+    Endless,
+    N(u8),
+}
+
+impl Repetitions {
+    pub(crate) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
+        parse_su8
+            .map(|n| match n {
+                0 => Self::Endless,
+                r => Self::N(r),
+            })
+            .parse(s)
+    }
+}
+
+impl Display for Repetitions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Endless => write!(f, "0"),
+            Self::N(n) => write!(f, "{}", n),
+        }
+    }
+}
+
+//
+
 /// Holds a Record
 ///
 /// See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
