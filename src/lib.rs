@@ -45,6 +45,6 @@ pub(crate) mod util;
 pub use driver::{
     cmd::{frame::MotorAddress, payload::*},
     motor::{AllMotor, Motor},
-    responsehandle::ResponseHandle,
+    responsehandle::{RecoverableResponseError, ResponseError, ResponseHandle},
     Driver, DriverError,
 };
