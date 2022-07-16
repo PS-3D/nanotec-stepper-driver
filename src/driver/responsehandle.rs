@@ -45,6 +45,12 @@ impl<H: ResponseHandle<T>, T> Debug for RecoverableResponseError<H, T> {
     }
 }
 
+impl<H: ResponseHandle<T>, T> From<RecoverableResponseError<H, T>> for DriverError {
+    fn from(e: RecoverableResponseError<H, T>) -> Self {
+        e.error
+    }
+}
+
 //
 
 /// Error that contains ResponseHandle if error is recoverable.
@@ -93,6 +99,15 @@ impl<H: ResponseHandle<T>, T> Debug for ResponseError<H, T> {
         match self {
             ResponseError::Recoverable(e) => Debug::fmt(e, f),
             ResponseError::Fatal(e) => Debug::fmt(e, f),
+        }
+    }
+}
+
+impl<H: ResponseHandle<T>, T> From<ResponseError<H, T>> for DriverError {
+    fn from(e: ResponseError<H, T>) -> Self {
+        match e {
+            ResponseError::Recoverable(r) => r.into(),
+            ResponseError::Fatal(f) => f,
         }
     }
 }
