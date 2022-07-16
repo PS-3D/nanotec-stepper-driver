@@ -26,6 +26,8 @@ use std::{
 };
 use thiserror::Error;
 
+// TODO implement logging
+
 // unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
 // stable yet, we gotta put comments in between the different sections. otherwise
 // its just too much
@@ -93,6 +95,7 @@ struct InnerMotor {
 
 #[derive(Debug)]
 struct InnerDriver<I: Write + Read> {
+    // TODO make interface also BufWriter so we make less syscalls
     interface: BufReader<I>,
     // TODO optimise
     // the u8 basically acts like a semaphore, once it reaches 0 we know we
