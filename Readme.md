@@ -1,6 +1,6 @@
 # nanotec-stepper-driver
 
-This crate lets you talk to your [Nanotec](https://en.nanotec.com/) motors and stepper drivers with rust.\
+This crate lets you talk to your [Nanotec](https://en.nanotec.com/) stepper-motor controllers with rust.\
 It is written after the [Programming Manual V2.7](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf) and compatible with
 firmware versions 25.01.2013 and newer.
 
