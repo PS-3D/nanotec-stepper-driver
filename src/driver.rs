@@ -22,7 +22,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
     fmt::Arguments,
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Write},
     rc::Rc,
 };
 use thiserror::Error;
@@ -304,7 +304,7 @@ impl<I: SerialPort> Driver<I> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open()
+    ///     .open_native()
     ///     .unwrap();
     /// let driver = Driver::new(s);
     /// ```
@@ -343,7 +343,7 @@ impl<I: SerialPort> Driver<I> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open()
+    ///     .open_native()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -400,7 +400,7 @@ impl<I: SerialPort> Driver<I> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open()
+    ///     .open_native()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_all_motor().unwrap();
