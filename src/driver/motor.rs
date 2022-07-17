@@ -24,11 +24,8 @@ use nom::{
     sequence::{preceded, tuple},
     Finish, Parser,
 };
-use std::{
-    cell::RefCell,
-    io::{Read, Write},
-    rc::Rc,
-};
+use serialport::SerialPort;
+use std::{cell::RefCell, io::Write, rc::Rc};
 
 type DResult<T> = Result<T, DriverError>;
 /// temporary alias, should be changed in the future
@@ -300,14 +297,14 @@ macro_rules! long_write {
 /// println!("motors stopped");
 /// ```
 #[derive(Debug)]
-pub struct Motor<I: Write + Read> {
+pub struct Motor<I: SerialPort> {
     driver: Rc<RefCell<InnerDriver<I>>>,
     address: MotorAddress,
 }
 
 // DResult<impl ResponseHandle<T>> is not an alias since aliases with
 // impl aren't supported yet
-impl<I: Write + Read> Motor<I> {
+impl<I: SerialPort> Motor<I> {
     pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress) -> Self {
         Motor { driver, address }
     }
@@ -933,7 +930,7 @@ impl<I: Write + Read> Motor<I> {
     }
 }
 
-impl<I: Write + Read> Drop for Motor<I> {
+impl<I: SerialPort> Drop for Motor<I> {
     /// Removes this motor from the driver.\
     /// Afterwards, a motor with this address can be added again by calling
     /// [`Driver::add_motor`][super::Driver::add_motor].

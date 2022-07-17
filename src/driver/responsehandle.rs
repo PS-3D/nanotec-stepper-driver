@@ -1,11 +1,6 @@
 use super::{cmd::frame::MotorAddress, DriverError, InnerDriver};
-use std::{
-    cell::RefCell,
-    fmt::Debug,
-    io::{Read, Write},
-    marker::PhantomData,
-    rc::Rc,
-};
+use serialport::SerialPort;
+use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 use thiserror::Error;
 
 // unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
@@ -178,7 +173,7 @@ pub trait ResponseHandle<T> {
 //
 
 #[derive(Debug)]
-pub(super) struct ReadResponseHandle<I: Write + Read, T, P>
+pub(super) struct ReadResponseHandle<I: SerialPort, T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
@@ -194,7 +189,7 @@ where
 // implementations for read and write were split so we don't need to parse as much
 // since for write commands we only need to check if the payload matched what we
 // sent and it also makes WriteResponseHandle::wait a bit faster
-impl<I: Write + Read, T, P> ReadResponseHandle<I, T, P>
+impl<I: SerialPort, T, P> ReadResponseHandle<I, T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
@@ -208,7 +203,7 @@ where
     }
 }
 
-impl<I: Write + Read, T, P> ResponseHandle<T> for ReadResponseHandle<I, T, P>
+impl<I: SerialPort, T, P> ResponseHandle<T> for ReadResponseHandle<I, T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
@@ -240,14 +235,14 @@ where
 // since for write commands we only need to check if the payload matched what we
 // sent and it also makes WriteResponseHandle::wait a bit faster
 #[derive(Debug)]
-pub(super) struct WriteResponseHandle<I: Write + Read> {
+pub(super) struct WriteResponseHandle<I: SerialPort> {
     driver: Rc<RefCell<InnerDriver<I>>>,
     address: MotorAddress,
     // payload we sent
     sent: Vec<u8>,
 }
 
-impl<I: Write + Read> WriteResponseHandle<I> {
+impl<I: SerialPort> WriteResponseHandle<I> {
     pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress, sent: Vec<u8>) -> Self {
         Self {
             driver,
@@ -257,7 +252,7 @@ impl<I: Write + Read> WriteResponseHandle<I> {
     }
 }
 
-impl<I: Write + Read> ResponseHandle<()> for WriteResponseHandle<I> {
+impl<I: SerialPort> ResponseHandle<()> for WriteResponseHandle<I> {
     // the whole match error and drop shenannigans are needed to statisfy the
     // borrow checker
     fn wait(self) -> Result<(), ResponseError<Self, ()>> {
@@ -308,12 +303,12 @@ impl ResponseHandle<()> for DummyResponseHandle {
 // Wrapper so we can return Write and Dummy, read is not needed since read
 // commands always return a value
 #[derive(Debug)]
-pub(super) enum WrapperResponseHandle<I: Read + Write> {
+pub(super) enum WrapperResponseHandle<I: SerialPort> {
     Write(WriteResponseHandle<I>),
     Dummy(DummyResponseHandle),
 }
 
-impl<I: Write + Read> ResponseHandle<()> for WrapperResponseHandle<I> {
+impl<I: SerialPort> ResponseHandle<()> for WrapperResponseHandle<I> {
     fn wait(self) -> Result<(), ResponseError<Self, ()>> {
         use WrapperResponseHandle::*;
         // the maps are required to map from ResponseError<WriteResponseHandle> or

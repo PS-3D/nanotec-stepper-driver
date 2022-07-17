@@ -17,6 +17,7 @@ use self::{
 };
 use crate::util::ensure;
 use nom::Finish;
+use serialport::SerialPort;
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
@@ -106,7 +107,7 @@ struct InnerDriver<I: Write + Read> {
     motors: HashMap<u8, InnerMotor>,
 }
 
-impl<I: Write + Read> InnerDriver<I> {
+impl<I: SerialPort> InnerDriver<I> {
     // Should only be called by the drop function in Motor
     pub fn drop_motor(&mut self, address: &u8) {
         self.motors.remove(address);
@@ -285,11 +286,11 @@ impl<I: Write + Read> InnerDriver<I> {
 /// that originiated from the driver are dropped is the interface acually dropped,
 /// but not closed.
 #[derive(Debug)]
-pub struct Driver<I: Write + Read> {
+pub struct Driver<I: SerialPort> {
     inner: Rc<RefCell<InnerDriver<I>>>,
 }
 
-impl<I: Write + Read> Driver<I> {
+impl<I: SerialPort> Driver<I> {
     /// Returns new Driver. `I` is the interface used to actually communicate
     /// with the motors. Usually it's a serialport. Since the motors usually
     /// take a while to reply, especially when they're moving, the timeout of `I`
