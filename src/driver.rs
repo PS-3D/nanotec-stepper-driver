@@ -95,7 +95,7 @@ struct InnerMotor {
 }
 
 #[derive(Debug)]
-struct InnerDriver<I: Write + Read> {
+struct InnerDriver<I: SerialPort> {
     // TODO make interface also BufWriter so we make less syscalls
     interface: BufReader<I>,
     // TODO optimise
