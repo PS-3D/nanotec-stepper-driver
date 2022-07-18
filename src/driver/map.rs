@@ -42,6 +42,7 @@ makepl!(
     READ_EEPROM_BYTE, "(E",
     RESET_EEPROM, "~",
     AUTO_STATUS_SENDING, "J",
+    AUTO_STATUS, "j",
     START_BOOTLOADER, "@S",
     REVERSE_CLEARANCE, "z",
     RAMP_TYPE, ":ramp_mode",

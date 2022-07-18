@@ -3,7 +3,10 @@ mod tests;
 
 use super::super::parse::ParseError;
 use nom::{self, character::complete::u8 as parse_u8, IResult, Parser};
-use std::fmt::{Debug, Display};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+};
 
 // unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
 // stable yet, we gotta put comments in between the different sections. otherwise
@@ -38,6 +41,13 @@ impl MotorAddress {
         match self {
             Self::All => panic!("single() called on All"),
             Self::Single(a) => a,
+        }
+    }
+
+    pub fn single_or<E: Error>(self, error: E) -> Result<u8, E> {
+        match self {
+            Self::All => Err(error),
+            Self::Single(a) => Ok(a),
         }
     }
 

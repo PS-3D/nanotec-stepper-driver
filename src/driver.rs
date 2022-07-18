@@ -10,7 +10,7 @@ pub mod responsehandle;
 use self::{
     cmd::{
         frame::{MotorAddress, Msg, MsgWrap},
-        payload::RespondMode,
+        payload::{self, MotorStatus, RespondMode},
     },
     motor::{AllMotor, Motor},
     parse::ParseError,
@@ -54,10 +54,16 @@ pub enum DriverError {
     /// requirements specified in the manual
     #[error("invalid value for command argument")]
     InvalidArgument,
-    /// Thrown if a motor with an address the driver didn't know responded,
-    /// meaning that `driver.add_motor(<address>)` wasn't called beforehand.
-    #[error("unexpected motor with address {0} responded")]
+    /// Thrown if a motor with an address the driver didn't expect responded.
+    /// That can be because the motor address isn't known to the driver or because
+    /// that motor shouldn't send a message right now.
+    #[error("motor with address {0} unexpectedly responded")]
     UnexpectedResponse(MotorAddress),
+    /// Thrown if a motor that didn't have automatic status sending enabled
+    /// sent an automatic status or if it sent a status but already had one
+    /// waiting that wasn't fetched
+    #[error("motor with address {0} sent an unexpected automatic status")]
+    UnexpectedStatus(u8),
     /// Thrown by a function in [`Motor`] if the given motor is already waiting
     /// on a response
     #[error("motor is already waiting on a response and therefore not available")]
@@ -77,6 +83,7 @@ impl From<ParseError<&[u8]>> for DriverError {
     fn from(e: ParseError<&[u8]>) -> Self {
         Self::ParsingError(match e {
             ParseError::InvalidValue => ParseError::InvalidValue,
+            ParseError::NonEmptyRemainder => ParseError::NonEmptyRemainder,
             ParseError::NomError(e) => ParseError::NomError(nom::error::Error {
                 input: e.input.to_vec(),
                 code: e.code,
@@ -90,6 +97,8 @@ impl From<ParseError<&[u8]>> for DriverError {
 #[derive(Debug)]
 struct InnerMotor {
     available: bool,
+    send_autostatus: bool,
+    autostatus: Option<MotorStatus>,
     respond_mode: RespondMode,
     queue: VecDeque<Vec<u8>>,
 }
@@ -124,15 +133,97 @@ impl<I: SerialPort> InnerDriver<I> {
         self.all.as_ref().map_or(false, |a| a.0 != 0)
     }
 
+    fn handle_status_msg(
+        &mut self,
+        address: MotorAddress,
+        status: MotorStatus,
+    ) -> Result<(), DriverError> {
+        // having the check for all motors in the handler is suboptimal but the
+        // easiest solution for now, maybe we'll change it in the future
+        let saddr = address.single_or(DriverError::UnexpectedResponse(address))?;
+        let imotor = self
+            .motors
+            .get_mut(&saddr)
+            // if motor address was unknown
+            .ok_or(DriverError::UnexpectedResponse(address))?;
+        ensure!(
+            imotor.send_autostatus && imotor.autostatus.is_none(),
+            DriverError::UnexpectedStatus(saddr)
+        );
+        // ignore since there isn't a value, we checked it above
+        // we do it like this instead of using replace to keep the original
+        // value if there is one
+        let _ = imotor.autostatus.insert(status);
+        Ok(())
+    }
+
+    fn handle_general_msg(&mut self, msg: Msg) -> Result<(), DriverError> {
+        // having the check for all motors in the handler is suboptimal but the
+        // easiest solution for now, maybe we'll change it in the future
+        let saddr = msg
+            .address
+            .single_or(DriverError::UnexpectedResponse(msg.address))?;
+        ensure!(
+            self.all.is_none(),
+            DriverError::UnexpectedResponse(msg.address)
+        );
+        let imotor = self
+            .motors
+            .get_mut(&saddr)
+            .ok_or(DriverError::UnexpectedResponse(msg.address))?;
+        ensure!(
+            !imotor.available,
+            DriverError::UnexpectedResponse(msg.address)
+        );
+        imotor.available = true;
+        imotor.queue.push_back(msg.payload);
+        Ok(())
+    }
+
     // receives a single msg from the interface and parses it into a Msg
     fn receive_msg(&mut self) -> Result<Msg, DriverError> {
         // size chosen more or less randomly, should fit most messages
         let mut buf = Vec::with_capacity(64);
         self.interface.read_until(b'\r', &mut buf)?;
+        // there can't be a remainder since we only read till the first '\r'
         let (_, wrap) = MsgWrap::parse(&buf).finish()?;
         match wrap {
             MsgWrap::Valid(msg) => Ok(msg),
             MsgWrap::Invalid(msg) => Err(DriverError::InvalidCmd(msg.payload)),
+        }
+    }
+
+    // TODO write tests
+    // receives a general message. if the message returned by receive_msg
+    // isnt a general message, e.g. an automatic status, it is handled appropriately
+    fn receive_general_msg(&mut self) -> Result<Msg, DriverError> {
+        loop {
+            let msg = self.receive_msg()?;
+            // ignore error since error means that parser didn't match and
+            // so we have to assume the message wasn't a status message
+            if let Some(status) =
+                parse::finish_no_remainder(&msg.payload, payload::parse_auto_status_payload).ok()
+            {
+                self.handle_status_msg(msg.address, status)?;
+            } else {
+                return Ok(msg);
+            }
+        }
+    }
+
+    fn receive_status_msg(&mut self) -> Result<(u8, MotorStatus), DriverError> {
+        loop {
+            let msg = self.receive_msg()?;
+            if let Some(status) =
+                parse::finish_no_remainder(&msg.payload, payload::parse_auto_status_payload).ok()
+            {
+                let saddr = msg
+                    .address
+                    .single_or(DriverError::UnexpectedResponse(msg.address))?;
+                return Ok((saddr, status));
+            } else {
+                self.handle_general_msg(msg)?;
+            }
         }
     }
 
@@ -164,13 +255,14 @@ impl<I: SerialPort> InnerDriver<I> {
             // be a response to an all command so we can massively
             // simplify the receiving process
             loop {
-                let msg = self.receive_msg()?;
+                let msg = self.receive_general_msg()?;
                 if let MotorAddress::Single(a) = msg.address {
                     let imotor = self
                         .motors
                         .get_mut(&a)
                         // if motor address was unknown
                         .ok_or(DriverError::UnexpectedResponse(MotorAddress::Single(a)))?;
+                    // FIXME error if motor is already available
                     imotor.available = true;
                     if a == address {
                         return Ok(msg.payload);
@@ -191,7 +283,7 @@ impl<I: SerialPort> InnerDriver<I> {
             // be a response from one with a singular address so we can massively
             // simplify the receiving process
             for _ in 0..self.all.as_ref().unwrap().0 {
-                let msg = self.receive_msg()?;
+                let msg = self.receive_general_msg()?;
                 ensure!(
                     msg.address.is_all(),
                     DriverError::UnexpectedResponse(msg.address)
@@ -206,6 +298,28 @@ impl<I: SerialPort> InnerDriver<I> {
             }
         }
         Ok(self.all.take().unwrap().1)
+    }
+
+    pub fn receive_status(&mut self, address: u8) -> Result<MotorStatus, DriverError> {
+        // shouldn't panic since this method should only be called with addresses
+        // that already exist
+        let imotor = self.motors.get_mut(&address).unwrap();
+        if let Some(status) = imotor.autostatus {
+            Ok(status)
+        } else {
+            loop {
+                let status = self.receive_status_msg()?;
+                if status.0 == address {
+                    return Ok(status.1);
+                } else {
+                    // for now we have to wrap the address into a MotorAddress
+                    // again, in the future we probably have to make a type for
+                    // Msg Payloads
+                    // TODO make Msg Payload type
+                    self.handle_status_msg(status.0.into(), status.1)?;
+                }
+            }
+        }
     }
 
     // send_single split in 2 functions cause there are cases like reading values
@@ -370,6 +484,8 @@ impl<I: SerialPort> Driver<I> {
                 address,
                 InnerMotor {
                     available: true,
+                    send_autostatus: false,
+                    autostatus: None,
                     respond_mode,
                     queue: VecDeque::with_capacity(4),
                 },

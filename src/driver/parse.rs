@@ -3,7 +3,7 @@ use nom::{
     character::complete::{u16 as parse_u16, u32 as parse_u32, u64 as parse_u64, u8 as parse_u8},
     combinator::opt,
     sequence::preceded,
-    IResult, Parser,
+    Finish, IResult, Parser,
 };
 use std::fmt::Debug;
 use thiserror::Error;
@@ -16,6 +16,9 @@ pub enum ParseError<I: Debug> {
     /// which usually means it's too big.
     #[error("Invalid Value while Parsing, probably too big")]
     InvalidValue,
+    /// Thrown if the remainder isn't empty but should be
+    #[error("remainder was not empty")]
+    NonEmptyRemainder,
     /// Wrapper around [`nom::error::Error`]
     #[error("nom error: {0:?}")]
     NomError(nom::error::Error<I>),
@@ -71,6 +74,21 @@ where
     E: nom::error::ParseError<&'a [u8]>,
 {
     parse_s(parse_u64)(s)
+}
+
+pub(super) fn finish_no_remainder<'a, P, O>(
+    s: &'a [u8],
+    parser: P,
+) -> Result<O, ParseError<&'a [u8]>>
+where
+    P: Fn(&'a [u8]) -> IResult<&'a [u8], O, ParseError<&'a [u8]>>,
+{
+    let (rem, res) = parser(s).finish()?;
+    if rem.is_empty() {
+        Ok(res)
+    } else {
+        Err(ParseError::NonEmptyRemainder)
+    }
 }
 
 #[inline]

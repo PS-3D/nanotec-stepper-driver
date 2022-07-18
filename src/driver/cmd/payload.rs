@@ -272,6 +272,76 @@ impl Display for MotorError {
 
 //
 
+// TODO write tests
+/// Binding for values of [1.5.22 Reading out the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+/// as well as [1.5.22 Reading out the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum MotorStatus {
+    Ready,
+    ZeroPosReached,
+    PosError,
+    Input1SetReady,
+}
+
+impl MotorStatus {
+    pub(crate) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
+        let (rem, res) = parse_su8(s)?;
+        if let Some(s) = Self::from_u8(res) {
+            Ok((rem, s))
+        } else {
+            Err(nom::Err::Error(ParseError::InvalidValue))
+        }
+    }
+
+    pub fn from_u8(n: u8) -> Option<Self> {
+        if n & 0xf0 != 0xa0 {
+            return None;
+        }
+        Some(match n & 0xf {
+            0x1 => Self::Ready,
+            0x2 => Self::ZeroPosReached,
+            0x4 => Self::PosError,
+            0x8 => Self::Input1SetReady,
+            _ => return None,
+        })
+    }
+}
+
+impl From<MotorStatus> for u8 {
+    fn from(s: MotorStatus) -> Self {
+        (match s {
+            MotorStatus::Ready => 0x1,
+            MotorStatus::ZeroPosReached => 0x2,
+            MotorStatus::PosError => 0x4,
+            MotorStatus::Input1SetReady => 0x8,
+        }) | 0xa0
+    }
+}
+
+impl From<u8> for MotorStatus {
+    /// Convertsfrom [`u8`] to MotorStatus
+    ///
+    /// # Panics
+    /// Panics if the given u8 is not a valid MotorStatus i.e. multiple bits
+    /// per section are set or the last 4 bits are not set properly
+    fn from(b: u8) -> Self {
+        Self::from_u8(b).unwrap()
+    }
+}
+
+impl Display for MotorStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", u8::from(*self))
+    }
+}
+
+pub fn parse_auto_status_payload(s: &[u8]) -> IResult<&[u8], MotorStatus, ParseError<&[u8]>> {
+    use nom::{bytes::complete::tag, sequence::preceded};
+    preceded(tag(map::AUTO_STATUS), MotorStatus::parse)(s)
+}
+
+//
+
 /// Helper binding for values of [1.5.23 Reading out the firmware version](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[allow(non_camel_case_types)]
