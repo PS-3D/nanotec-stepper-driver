@@ -11,8 +11,8 @@ use super::{
     map,
     parse::{parse_su16, parse_su32, parse_su64, parse_su8, ParseError},
     responsehandle::{
-        DummyResponseHandle, ReadResponseHandle, ResponseHandle, WrapperResponseHandle,
-        WriteResponseHandle,
+        DummyResponseHandle, MotorMappingError, MotorMappingResponseHandle, ReadResponseHandle,
+        ResponseHandle, WrapperResponseHandle, WriteResponseHandle,
     },
     DriverError, InnerDriver,
 };
@@ -25,11 +25,42 @@ use nom::{
     Finish, Parser,
 };
 use serialport::SerialPort;
-use std::{cell::RefCell, io::Write, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, io::Write, marker::PhantomData, rc::Rc};
 
 type DResult<T> = Result<T, DriverError>;
 /// temporary alias, should be changed in the future
-pub type AllMotor<I> = Motor<I>;
+pub type AllMotor<I, AS> = Motor<I, AS>;
+
+//
+
+/// Serves to allow 2 different implementations some functions
+///
+/// Makes it possible to allow different implementations for all funcitons that
+/// are affected by the automatic status sending (see also [`SendAutoStatus`],
+/// [`NoSendAutoStatus`] and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
+pub trait AutoStatusMode {}
+
+/// Serves to allow 2 different implementations some functions
+///
+/// Makes it possible to allow different implementations for all funcitons that
+/// are affected by the automatic status sending (see also [`AutoStatusMode`],
+/// [`NoSendAutoStatus`] and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
+#[derive(Debug)]
+pub struct SendAutoStatus();
+
+impl AutoStatusMode for SendAutoStatus {}
+
+/// Serves to allow 2 different implementations some functions
+///
+/// Makes it possible to allow different implementations for all funcitons that
+/// are affected by the automatic status sending (see also [`AutoStatusMode`],
+/// [`SendAutoStatus`] and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
+#[derive(Debug)]
+pub struct NoSendAutoStatus();
+
+impl AutoStatusMode for NoSendAutoStatus {}
+
+//
 
 // sends read command to motor
 // in theory a read command isn't diffrent than a write command, the
@@ -294,21 +325,17 @@ macro_rules! long_write {
 /// println!("started motors");
 /// handle1.wait().unwrap();
 /// handle2.wait().unwrap();
-/// println!("motors stopped");
 /// ```
 #[derive(Debug)]
-pub struct Motor<I: SerialPort> {
+pub struct Motor<I: SerialPort, AS: AutoStatusMode> {
     driver: Rc<RefCell<InnerDriver<I>>>,
     address: MotorAddress,
+    marker_as: PhantomData<AS>,
 }
 
 // DResult<impl ResponseHandle<T>> is not an alias since aliases with
 // impl aren't supported yet
-impl<I: SerialPort> Motor<I> {
-    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress) -> Self {
-        Motor { driver, address }
-    }
-
+impl<I: SerialPort, AS: AutoStatusMode> Motor<I, AS> {
     pub fn get_motor_type(&mut self) -> DResult<impl ResponseHandle<MotorType>> {
         long_read!(self, map::MOTOR_TYPE, MotorType::parse)
     }
@@ -682,10 +709,6 @@ impl<I: SerialPort> Motor<I> {
         long_write!(self, map::GEAR_FACTOR_DENOMINATOR, d)
     }
 
-    pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<()>> {
-        short_write!(self, map::START_MOTOR, "")
-    }
-
     pub fn stop_motor(&mut self, stop: MotorStop) -> DResult<impl ResponseHandle<()>> {
         short_write!(self, map::STOP_MOTOR, stop)
     }
@@ -930,7 +953,47 @@ impl<I: SerialPort> Motor<I> {
     }
 }
 
-impl<I: SerialPort> Drop for Motor<I> {
+impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
+    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress) -> Self {
+        Motor {
+            driver,
+            address,
+            marker_as: PhantomData,
+        }
+    }
+
+    // FIXME block for allmotor, since we can't map all motor types
+    // TODO make error in responsehandle generic as From<DriverError> or something
+    pub fn start_sending_auto_status(
+        self,
+    ) -> Result<
+        impl ResponseHandle<Motor<I, SendAutoStatus>, MotorMappingError<I, NoSendAutoStatus>>,
+        MotorMappingError<I, NoSendAutoStatus>,
+    > {
+        // helper just for setting the of the "returned" error of short_write
+        // right, because it has the ? operator in it but only returns a driver
+        // error and we need to map that.
+        // FIXME don't use macro, then we don't have to use the helper function
+        fn w<I: SerialPort>(s: &Motor<I, NoSendAutoStatus>) -> DResult<WrapperResponseHandle<I>> {
+            short_write!(s, map::AUTO_STATUS_SENDING, 1)
+        }
+        let rh = w(&self);
+        match rh {
+            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| Motor {
+                driver: m.driver.clone(),
+                address: m.address,
+                marker_as: PhantomData,
+            })),
+            Err(e) => Err(MotorMappingError(self, e)),
+        }
+    }
+
+    pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<()>> {
+        short_write!(self, map::START_MOTOR, "")
+    }
+}
+
+impl<I: SerialPort, AS: AutoStatusMode> Drop for Motor<I, AS> {
     /// Removes this motor from the driver.\
     /// Afterwards, a motor with this address can be added again by calling
     /// [`Driver::add_motor`][super::Driver::add_motor].

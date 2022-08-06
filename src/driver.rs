@@ -12,7 +12,7 @@ use self::{
         frame::{MotorAddress, Msg, MsgWrap},
         payload::{self, MotorStatus, RespondMode},
     },
-    motor::{AllMotor, Motor},
+    motor::{AllMotor, Motor, NoSendAutoStatus},
     parse::ParseError,
 };
 use crate::util::ensure;
@@ -466,7 +466,7 @@ impl<I: SerialPort> Driver<I> {
         &mut self,
         address: u8,
         respond_mode: RespondMode,
-    ) -> Result<Motor<I>, DriverError> {
+    ) -> Result<Motor<I, NoSendAutoStatus>, DriverError> {
         ensure!(
             address >= 1 && address <= 254,
             DriverError::InvalidAddress(address)
@@ -521,7 +521,7 @@ impl<I: SerialPort> Driver<I> {
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
-    pub fn add_all_motor(&mut self) -> Result<AllMotor<I>, DriverError> {
+    pub fn add_all_motor(&mut self) -> Result<AllMotor<I, NoSendAutoStatus>, DriverError> {
         let mut inner = self.inner.as_ref().borrow_mut();
         ensure!(
             !inner.all_exists,
