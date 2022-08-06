@@ -335,7 +335,9 @@ impl Display for MotorStatus {
     }
 }
 
-pub fn parse_auto_status_payload(s: &[u8]) -> IResult<&[u8], MotorStatus, ParseError<&[u8]>> {
+pub(crate) fn parse_auto_status_payload(
+    s: &[u8],
+) -> IResult<&[u8], MotorStatus, ParseError<&[u8]>> {
     use nom::{bytes::complete::tag, sequence::preceded};
     preceded(tag(map::AUTO_STATUS), MotorStatus::parse)(s)
 }
