@@ -1003,7 +1003,21 @@ impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
     }
 
     // FIXME block for allmotor, since we can't map all motor types
-    // TODO docs
+    /// Enables [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+    ///
+    /// This function consumes the motor and if the command was successful,
+    /// returns a motor with type `Motor<I, SendAutoStatus>`. There, the
+    /// return-type of [`start_motor`][Motor::start_motor] is adjusted to be then
+    /// able to wait on the motor status, making it possble to know when the motor
+    /// finished.
+    ///
+    /// # Panics
+    /// If the current motor is the [`AllMotor`]
+    ///
+    /// # Errors
+    /// If the command fails for any reason, a [`MotorMappingError`] is returned.
+    /// It contains the actual [`DriverError`] and the original motor, making
+    /// it possible to try again.
     pub fn start_sending_auto_status(
         self,
     ) -> Result<
@@ -1028,8 +1042,97 @@ impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
         }
     }
 
+    /// Starts the motor, also see [1.6.1 Starting a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+    ///
+    /// This function is only used when [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+    /// isn't enabled. See also [`start_sending_auto_status`][Motor::start_sending_auto_status]
     pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<Ret = ()>> {
         short_write!(self, map::START_MOTOR, "")
+    }
+}
+
+impl<I: SerialPort> Motor<I, SendAutoStatus> {
+    // FIXME block for allmotor, since we can't map all motor types
+    /// Disables [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+    ///
+    /// This function consumes the motor and if the command was successful,
+    /// returns a motor with type `Motor<I, NoSendAutoStatus>`. There, the
+    /// return-type of [`start_motor`][Motor::start_motor] is adjusted to not
+    /// return anything.
+    ///
+    /// # Panics
+    /// If the current motor is the [`AllMotor`]
+    ///
+    /// # Errors
+    /// If the command fails for any reason, a [`MotorMappingError`] is returned.
+    /// It contains the actual [`DriverError`] and the original motor, making
+    /// it possible to try again.
+    pub fn stop_sending_auto_status(
+        self,
+    ) -> Result<
+        impl ResponseHandle<MotorMappingError<I, SendAutoStatus>, Ret = Motor<I, NoSendAutoStatus>>,
+        MotorMappingError<I, SendAutoStatus>,
+    > {
+        // FIXME implement seperate version for allmotor
+        // NOTE this is just a hotfix sortof for not having implemented the
+        // seperate version yet
+        match self.address {
+            MotorAddress::All => unimplemented!(),
+            _ => (),
+        }
+        // helper just for setting the of the "returned" error of short_write
+        // right, because it has the ? operator in it but only returns a driver
+        // error and we need to map that.
+        // FIXME don't use macro, then we don't have to use the helper function
+        fn w<I: SerialPort>(s: &Motor<I, SendAutoStatus>) -> DResult<WrapperResponseHandle<I>> {
+            short_write!(s, map::AUTO_STATUS_SENDING, 0)
+        }
+        let rh = w(&self);
+        match rh {
+            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| Motor {
+                driver: m.driver.clone(),
+                address: m.address,
+                marker_as: PhantomData,
+            })),
+            Err(e) => Err(MotorMappingError(self, e)),
+        }
+    }
+
+    /// Starts the motor, also see [1.6.1 Starting a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+    ///
+    /// This function is only used when [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+    /// is enabled. This means that the first handle returns another handle that,
+    /// when waited on, returns the status of the motor. See also
+    /// [`start_sending_auto_status`][Motor::start_sending_auto_status]
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
+    /// use std::time::Duration;
+    /// use serialport;
+    ///
+    /// let s = serialport::new("/dev/ttyUSB0", 115200)
+    ///     .timeout(Duration::from_secs(1))
+    ///     .open_native()
+    ///     .unwrap();
+    /// let mut driver = Driver::new(s);
+    /// let mut m = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+    ///
+    /// let mut m = m.start_sending_auto_status().unwrap().wait().unwrap();
+    ///
+    /// let handle = m.start_motor().unwrap().wait().unwrap();
+    /// println!("started motor");
+    /// let status = handle.wait().unwrap();
+    /// println!("motor finished");
+    /// ```
+    pub fn start_motor(
+        &mut self,
+    ) -> DResult<impl ResponseHandle<Ret = impl ResponseHandle<Ret = MotorStatus>>> {
+        let driver = self.driver.clone();
+        // FIXME implement seperate version for all motors
+        let address = self.address.single();
+        short_write!(self, map::START_MOTOR, "")
+            .map(move |h| h.map(move |()| StatusResponseHandle::new(driver, address)))
     }
 }
 
