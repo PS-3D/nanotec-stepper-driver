@@ -48,8 +48,8 @@ pub trait AutoStatusMode {}
 /// Serves to allow 2 different implementations some functions
 ///
 /// Makes it possible to allow different implementations for all funcitons that
-/// are affected by the automatic status sending (see also [`AutoStatusMode`],
-/// [`NoSendAutoStatus`] and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
+/// are affected by the automatic status sending (see also [`NoSendAutoStatus`]
+/// and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
 #[derive(Debug)]
 pub struct SendAutoStatus();
 
@@ -58,8 +58,8 @@ impl AutoStatusMode for SendAutoStatus {}
 /// Serves to allow 2 different implementations some functions
 ///
 /// Makes it possible to allow different implementations for all funcitons that
-/// are affected by the automatic status sending (see also [`AutoStatusMode`],
-/// [`SendAutoStatus`] and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
+/// are affected by the automatic status sending (see also [`SendAutoStatus`] and
+/// [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
 #[derive(Debug)]
 pub struct NoSendAutoStatus();
 

@@ -105,8 +105,8 @@ where
 /// waits for the result, as well as the original error.
 ///
 /// In some cases the fatal error needs to be a different type than the recoverable
-/// error, for example when calling [`Motor::start_sending_auto_status`], where
-/// the original motor needs to be returned on a fatal error.
+/// error, for example when calling [`Motor::start_sending_auto_status`][super::motor::Motor::start_sending_auto_status],
+/// where the original motor needs to be returned on a fatal error.
 #[derive(Error)]
 pub enum ResponseError<H, T, EF, ER = DriverError>
 where
