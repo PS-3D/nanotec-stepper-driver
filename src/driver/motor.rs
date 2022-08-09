@@ -30,7 +30,7 @@ use nom::{
     Finish, Parser,
 };
 use serialport::SerialPort;
-use std::{cell::RefCell, fmt::Debug, io::Write, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, io::Write, marker::PhantomData, mem, rc::Rc};
 
 type DResult<T> = Result<T, DriverError>;
 /// temporary alias, should be changed in the future
@@ -332,6 +332,9 @@ macro_rules! long_write {
 /// handle2.wait().unwrap();
 /// ```
 #[derive(Debug)]
+// needed for transmutation
+// unfortunately there's no better way
+#[repr(C)]
 pub struct Motor<I: SerialPort, AS: AutoStatusMode> {
     driver: Rc<RefCell<InnerDriver<I>>>,
     address: MotorAddress,
@@ -1033,10 +1036,16 @@ impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
         }
         let rh = w(&self);
         match rh {
-            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| Motor {
-                driver: m.driver.clone(),
-                address: m.address,
-                marker_as: PhantomData,
+            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| unsafe {
+                // Safety:
+                // Motor is repr(C), meaning we can assume the repr will be
+                // the same way
+                // PhantomData is a ZST, meaning it doesn't matter what we cast
+                // it to
+                //
+                // Unfortunately there's not really a better way, at least not
+                // one that won't really clutter code with unwraps and so on
+                mem::transmute::<Motor<I, NoSendAutoStatus>, Motor<I, SendAutoStatus>>(m)
             })),
             Err(e) => Err(MotorMappingError(self, e)),
         }
@@ -1089,10 +1098,16 @@ impl<I: SerialPort> Motor<I, SendAutoStatus> {
         }
         let rh = w(&self);
         match rh {
-            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| Motor {
-                driver: m.driver.clone(),
-                address: m.address,
-                marker_as: PhantomData,
+            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| unsafe {
+                // Safety:
+                // Motor is repr(C), meaning we can assume the repr will be
+                // the same way
+                // PhantomData is a ZST, meaning it doesn't matter what we cast
+                // it to
+                //
+                // Unfortunately there's not really a better way, at least not
+                // one that won't really clutter code with unwraps and so on
+                mem::transmute::<Motor<I, SendAutoStatus>, Motor<I, NoSendAutoStatus>>(m)
             })),
             Err(e) => Err(MotorMappingError(self, e)),
         }
@@ -1143,6 +1158,7 @@ impl<I: SerialPort, AS: AutoStatusMode> Drop for Motor<I, AS> {
     ///
     /// See also [here][`Drop`]
     fn drop(&mut self) {
+        println!("dropping");
         if let MotorAddress::Single(a) = self.address {
             self.driver.as_ref().borrow_mut().drop_motor(&a)
         } else {
