@@ -1,5 +1,6 @@
 use nanotec_stepper_driver::{
-    Driver, PositioningMode, Record, Repetitions, RespondMode, ResponseHandle, RotationDirection,
+    Driver, MotorStatus, PositioningMode, Record, Repetitions, RespondMode, ResponseHandle,
+    RotationDirection,
 };
 use nanotec_stepper_driver_test::Interface;
 
@@ -54,8 +55,13 @@ fn single() {
 fn concurrent() {
     let mut interface = Interface::new();
     let mut driver = Driver::new(interface.clone());
-    let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
-    let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
+    let m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+    let m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
+
+    interface.add_cmd_echo(b"#1J1\r");
+    let mut m1 = m1.start_sending_auto_status().unwrap().wait().unwrap();
+    interface.add_cmd_echo(b"#2J1\r");
+    let mut m2 = m2.start_sending_auto_status().unwrap().wait().unwrap();
 
     interface.add_write(b"#1Z|\r");
     interface.add_write(b"#2y3\r");
@@ -115,14 +121,17 @@ fn concurrent() {
     h1.wait().unwrap();
     h2.wait().unwrap();
 
-    interface.add_write(b"#2A\r");
-    let h2 = m2.start_motor().unwrap();
-    interface.add_write(b"#1A\r");
-    let h1 = m1.start_motor().unwrap();
-    interface.add_read(b"2A\r");
-    h2.wait().unwrap();
-    interface.add_read(b"1A\r");
-    h1.wait().unwrap();
+    interface.add_cmd_echo(b"#2A\r");
+    let h2 = m2.start_motor().unwrap().wait().unwrap();
+    interface.add_cmd_echo(b"#1A\r");
+    let h1 = m1.start_motor().unwrap().wait().unwrap();
+    interface.add_read(b"2j161\r");
+    let s2 = h2.wait().unwrap();
+    interface.add_read(b"1j161\r");
+    let s1 = h1.wait().unwrap();
+
+    assert_eq!(s1, MotorStatus::Ready);
+    assert_eq!(s2, MotorStatus::Ready);
 }
 
 #[test]
