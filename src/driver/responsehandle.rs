@@ -1,10 +1,9 @@
-use super::{
-    cmd::frame::MotorAddress,
-    motor::{AutoStatusMode, Motor},
-    DriverError, InnerDriver,
-};
-use serialport::SerialPort;
-use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
+pub(crate) mod map;
+pub(crate) mod read;
+pub(crate) mod write;
+
+use super::DriverError;
+use std::{error::Error, fmt::Debug, marker::PhantomData};
 use thiserror::Error;
 
 // unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
@@ -26,7 +25,7 @@ use thiserror::Error;
 #[derive(Error)]
 pub struct RecoverableResponseError<H, T, EF, ER>
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
@@ -38,14 +37,14 @@ where
 
 impl<H, T, EF, ER> RecoverableResponseError<H, T, EF, ER>
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
     // maps the handle to anther handle using f
     fn map_handle<OH, OT, OEF, F>(self, f: F) -> RecoverableResponseError<OH, OT, OEF, ER>
     where
-        OH: ResponseHandle<OT, OEF, ER>,
+        OH: ResponseHandle<OEF, ER, Ret = OT>,
         OEF: Error + Into<DriverError>,
         F: FnOnce(H) -> OH,
     {
@@ -62,7 +61,7 @@ where
 // Debug
 impl<H, T, EF, ER> Debug for RecoverableResponseError<H, T, EF, ER>
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
@@ -73,7 +72,7 @@ where
 
 impl<H, T, EF, ER> From<RecoverableResponseError<H, T, EF, ER>> for DriverError
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
@@ -111,7 +110,7 @@ where
 #[derive(Error)]
 pub enum ResponseError<H, T, EF, ER = DriverError>
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
@@ -123,14 +122,14 @@ where
 
 impl<H, T, EF, ER> ResponseError<H, T, EF, ER>
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
     // maps the handle of RecoverableResponseERror to another handle using f
     fn map_handle<OH, OT, F>(self, f: F) -> ResponseError<OH, OT, EF, ER>
     where
-        OH: ResponseHandle<OT, EF, ER>,
+        OH: ResponseHandle<EF, ER, Ret = OT>,
         F: FnOnce(H) -> OH,
     {
         match self {
@@ -178,7 +177,7 @@ where
     }
 }
 
-impl<H: ResponseHandle<T>, T> ResponseError<H, T, DriverError> {
+impl<H: ResponseHandle<Ret = T>, T> ResponseError<H, T, DriverError> {
     fn from_driver_error(handle: H, error: DriverError) -> Self {
         let error = match error {
             DriverError::UnexpectedResponse(r) => DriverError::UnexpectedResponse(r),
@@ -196,7 +195,7 @@ impl<H: ResponseHandle<T>, T> ResponseError<H, T, DriverError> {
 // have to implement debug manually, somehow derive fucks it up
 impl<H, T, EF, ER> Debug for ResponseError<H, T, EF, ER>
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
@@ -218,7 +217,7 @@ where
 
 impl<H, T, EF, ER> From<ResponseError<H, T, EF, ER>> for DriverError
 where
-    H: ResponseHandle<T, EF, ER>,
+    H: ResponseHandle<EF, ER, Ret = T>,
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
@@ -238,11 +237,13 @@ where
 // for explanation on the two errors see ResponseError and maybe also
 // MotorMapResponseHandle
 /// Handle to wait for a motor response
-pub trait ResponseHandle<T, EF = DriverError, ER = DriverError>
+pub trait ResponseHandle<EF = DriverError, ER = DriverError>
 where
     EF: Error + Into<DriverError>,
     ER: Error + Into<DriverError>,
 {
+    type Ret;
+
     /// Check the response for correctness and return the result contained in the
     /// response, if there was one. Usually only getters have a returnvalue. If
     /// the response only needs to be checked for correctness but no value is
@@ -330,275 +331,7 @@ where
     /// handle1.wait().unwrap();
     /// handle2.wait().unwrap();
     /// ```
-    fn wait(self) -> Result<T, ResponseError<Self, T, EF, ER>>
+    fn wait(self) -> Result<Self::Ret, ResponseError<Self, Self::Ret, EF, ER>>
     where
         Self: Sized;
-}
-
-//
-
-#[derive(Debug)]
-pub(super) struct ReadResponseHandle<I: SerialPort, T, P>
-where
-    P: Fn(&[u8]) -> Result<T, DriverError>,
-{
-    driver: Rc<RefCell<InnerDriver<I>>>,
-    address: u8,
-    // should parse the payload of the message (command without #<address> and \r)
-    // and return a T from it
-    parser: P,
-    markert: PhantomData<T>,
-}
-
-// Implementation for read commands
-// implementations for read and write were split so we don't need to parse as much
-// since for write commands we only need to check if the payload matched what we
-// sent and it also makes WriteResponseHandle::wait a bit faster
-impl<I: SerialPort, T, P> ReadResponseHandle<I, T, P>
-where
-    P: Fn(&[u8]) -> Result<T, DriverError>,
-{
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: u8, parser: P) -> Self {
-        Self {
-            driver,
-            address,
-            parser,
-            markert: PhantomData,
-        }
-    }
-}
-
-impl<I: SerialPort, T, P> ResponseHandle<T> for ReadResponseHandle<I, T, P>
-where
-    P: Fn(&[u8]) -> Result<T, DriverError>,
-{
-    // the whole match error and drop shenannigans are needed to statisfy the
-    // borrow checker
-    fn wait(self) -> Result<T, ResponseError<Self, T, DriverError>> {
-        let mut driver = self.driver.as_ref().borrow_mut();
-        let payload = match driver.receive_single(self.address) {
-            Ok(p) => p,
-            Err(e) => {
-                drop(driver);
-                return Err(ResponseError::from_driver_error(self, e));
-            }
-        };
-        match (self.parser)(&payload) {
-            Ok(p) => Ok(p),
-            Err(e) => {
-                drop(driver);
-                Err(ResponseError::from_driver_error(self, e))
-            }
-        }
-    }
-}
-
-//
-
-// Implementation for write commands
-// implementations for read and write were split so we don't need to parse as much
-// since for write commands we only need to check if the payload matched what we
-// sent and it also makes WriteResponseHandle::wait a bit faster
-#[derive(Debug)]
-pub(super) struct WriteResponseHandle<I: SerialPort> {
-    driver: Rc<RefCell<InnerDriver<I>>>,
-    address: MotorAddress,
-    // payload we sent
-    sent: Vec<u8>,
-}
-
-impl<I: SerialPort> WriteResponseHandle<I> {
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress, sent: Vec<u8>) -> Self {
-        Self {
-            driver,
-            address,
-            sent,
-        }
-    }
-}
-
-impl<I: SerialPort> ResponseHandle<()> for WriteResponseHandle<I> {
-    // the whole match error and drop shenannigans are needed to statisfy the
-    // borrow checker
-    fn wait(self) -> Result<(), ResponseError<Self, (), DriverError>> {
-        let mut driver = self.driver.as_ref().borrow_mut();
-        let payload = match self.address {
-            MotorAddress::Single(a) => driver.receive_single(a),
-            MotorAddress::All => driver.receive_all(),
-        };
-        // unfortunately we can't just map the error because we have to
-        // drop the driver before we can return the error
-        let payload = match payload {
-            Ok(p) => p,
-            Err(e) => {
-                drop(driver);
-                return Err(ResponseError::from_driver_error(self, e));
-            }
-        };
-        if self.sent == payload {
-            Ok(())
-        } else {
-            drop(driver);
-            Err(ResponseError::from_driver_error(
-                self,
-                DriverError::NonMatchingPayloads(payload),
-            ))
-        }
-    }
-}
-
-//
-
-// Responsehandle for motors with RespondMode::Quiet
-#[derive(Debug)]
-pub(super) struct DummyResponseHandle();
-
-impl DummyResponseHandle {
-    pub fn new() -> Self {
-        Self()
-    }
-}
-
-impl ResponseHandle<()> for DummyResponseHandle {
-    fn wait(self) -> Result<(), ResponseError<Self, (), DriverError>> {
-        Ok(())
-    }
-}
-
-//
-
-// Wrapper so we can return Write and Dummy, read is not needed since read
-// commands always return a value
-//
-// In theory doing this would also be possible by making 2 different implementations
-// for Motor, like with AutoStatusMode, but this would only be
-// a lot of work, since the automatic status sending affects only a few methods
-// while whether or not the motor answers affects each and every command.
-// (Tho in the api we limit it to write commands only, since read commands without
-// an answer would be sortof stupid)
-#[derive(Debug)]
-pub(super) enum WrapperResponseHandle<I: SerialPort> {
-    Write(WriteResponseHandle<I>),
-    Dummy(DummyResponseHandle),
-}
-
-impl<I: SerialPort> ResponseHandle<()> for WrapperResponseHandle<I> {
-    fn wait(self) -> Result<(), ResponseError<Self, (), DriverError>> {
-        use WrapperResponseHandle::*;
-        // the maps are required to map from ResponseError<WriteResponseHandle> or
-        // ResponseError<DummyResponseHandle> to ResponseError<WrapperResponseHandle>
-        match self {
-            Write(h) => h.wait().map_err(|e| e.map_handle(|h| Write(h))),
-            Dummy(h) => h.wait().map_err(|e| e.map_handle(|h| Dummy(h))),
-        }
-    }
-}
-
-//
-
-// more or less just a helper error to be able to return a motor and
-// a drivererror in case the writeresponsehandle in motormappingresponsehandle
-// fails fatally. This is so the Motor can still be used, since there's no reason
-// why it shouldn't be usable.
-/// Returned by [`ResponseHandle::wait`] if the error of a motor mapping command
-/// was fatal
-///
-/// This means that the operation didn't succeed and there is no way to recover
-/// from it. This error holds the actual error that occured as well as the original
-/// motor, not the one with the new type, since it's still usable. Such a
-/// command would be [`Motor::start_sending_auto_status`].
-#[derive(Error)]
-#[error("{}", .1)]
-pub struct MotorMappingError<I: SerialPort, AS: AutoStatusMode>(
-    pub Motor<I, AS>,
-    #[source] pub DriverError,
-);
-
-impl<I: SerialPort, AS: AutoStatusMode> From<MotorMappingError<I, AS>> for DriverError {
-    fn from(e: MotorMappingError<I, AS>) -> Self {
-        e.1
-    }
-}
-
-// have to implement manually because we can't print a debug repr of Motor<I, AS>
-// if we don't restrict SerialPort and we don't really want to do that
-impl<I: SerialPort, AS: AutoStatusMode> Debug for MotorMappingError<I, AS> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MotorMappingError(_, {:?})", self.1)
-    }
-}
-
-//
-
-// responsehandle for mapping a whole motor
-// it uses an underlying writeresponsehandle in order to set the sending
-// of various things, for example automatically sending the status.
-// if the writeresponsehandle fails and is fatal, we return the original motor so
-// the motor can continue to be used and the operation maybe tried again (there
-// is no reason why it shouldn't be usable).
-// If it fails and is recoverable, we return a more or less copy of this handle
-// so wait can be called again and the operation might succed after all.
-// If it succeds we apply the mapping function and return the new motor.
-#[derive(Debug)]
-pub(super) struct MotorMappingResponseHandle<I, ASI, ASO, F>
-where
-    I: SerialPort,
-    ASI: AutoStatusMode + Debug,
-    ASO: AutoStatusMode + Debug,
-    F: FnOnce(Motor<I, ASI>) -> Motor<I, ASO>,
-{
-    motor: Motor<I, ASI>,
-    handle: WrapperResponseHandle<I>,
-    mapper: F,
-    markermo: PhantomData<ASO>,
-}
-
-impl<I, ASI, ASO, F> MotorMappingResponseHandle<I, ASI, ASO, F>
-where
-    I: SerialPort,
-    ASI: AutoStatusMode + Debug,
-    ASO: AutoStatusMode + Debug,
-    F: FnOnce(Motor<I, ASI>) -> Motor<I, ASO>,
-{
-    pub(super) fn new(motor: Motor<I, ASI>, handle: WrapperResponseHandle<I>, f: F) -> Self {
-        Self {
-            motor,
-            handle,
-            mapper: f,
-            markermo: PhantomData,
-        }
-    }
-}
-
-impl<I, ASI, ASO, F> ResponseHandle<Motor<I, ASO>, MotorMappingError<I, ASI>>
-    for MotorMappingResponseHandle<I, ASI, ASO, F>
-where
-    I: SerialPort,
-    ASI: AutoStatusMode + Debug,
-    ASO: AutoStatusMode + Debug,
-    F: FnOnce(Motor<I, ASI>) -> Motor<I, ASO>,
-{
-    fn wait(
-        self,
-    ) -> Result<Motor<I, ASO>, ResponseError<Self, Motor<I, ASO>, MotorMappingError<I, ASI>>>
-    where
-        Self: Sized,
-    {
-        // we have to do it like this instead of mapping, otherwise we will move
-        // self.motor twice, once for fatal and once for recoverable
-        if let Err(e) = self.handle.wait() {
-            return Err(match e {
-                ResponseError::Fatal(f) => ResponseError::Fatal(MotorMappingError(self.motor, f)),
-                ResponseError::Recoverable(r) => {
-                    ResponseError::Recoverable(r.map_handle(|h| Self {
-                        motor: self.motor,
-                        handle: h,
-                        mapper: self.mapper,
-                        markermo: PhantomData,
-                    }))
-                }
-            });
-        }
-        Ok((self.mapper)(self.motor))
-    }
 }
