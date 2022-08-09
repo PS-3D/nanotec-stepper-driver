@@ -234,6 +234,10 @@ where
 
 //
 
+// FIXME some sort of drop impl that the receiving of messages wont break
+// if responsehandle is dropped. An intermediate fix could be to panic
+// if responsehandle gets dropped or something similar
+//
 // for explanation on the two errors see ResponseError and maybe also
 // MotorMapResponseHandle
 /// Handle to wait for a motor response
