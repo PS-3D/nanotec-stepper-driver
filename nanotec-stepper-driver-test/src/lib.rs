@@ -163,7 +163,7 @@ impl SerialPort for Interface {
     }
 
     fn try_clone(&self) -> serialport::Result<Box<dyn SerialPort>> {
-        unimplemented!()
+        Ok(Box::new(self.clone()))
     }
 
     fn set_break(&self) -> serialport::Result<()> {

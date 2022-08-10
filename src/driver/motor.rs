@@ -296,7 +296,7 @@ macro_rules! long_write {
 ///     .timeout(Duration::from_secs(1))
 ///     .open()
 ///     .unwrap();
-/// let mut driver = Driver::new(s);
+/// let mut driver = Driver::new(s).unwrap();
 /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 ///
 /// m1.load_record(3).unwrap().wait().unwrap();
@@ -320,7 +320,7 @@ macro_rules! long_write {
 ///     .timeout(Duration::from_secs(1))
 ///     .open()
 ///     .unwrap();
-/// let mut driver = Driver::new(s);
+/// let mut driver = Driver::new(s).unwrap();
 /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 /// let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
 ///
@@ -1131,7 +1131,7 @@ impl Motor<SendAutoStatus> {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let mut driver = Driver::new(s);
+    /// let mut driver = Driver::new(s).unwrap();
     /// let mut m = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     ///
     /// let mut m = m.start_sending_auto_status().unwrap().wait().unwrap();

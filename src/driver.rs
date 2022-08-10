@@ -22,7 +22,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
     fmt::{Arguments, Debug},
-    io::{self, BufRead, BufReader, Write},
+    io::{self, BufRead, BufReader, BufWriter, Write},
     rc::Rc,
 };
 use thiserror::Error;
@@ -77,6 +77,9 @@ pub enum DriverError {
     /// Wrapper arund [`nom::error::Error`]
     #[error("{0}")]
     ParsingError(ParseError<Vec<u8>>),
+    /// Wrapper around [`serialport::Error`]
+    #[error(transparent)]
+    SerialPortError(#[from] serialport::Error),
 }
 
 impl From<ParseError<&[u8]>> for DriverError {
@@ -105,7 +108,8 @@ struct InnerMotor {
 
 struct InnerDriver {
     // TODO make interface also BufWriter so we make less syscalls
-    interface: BufReader<Box<dyn SerialPort>>,
+    read_interface: BufReader<Box<dyn SerialPort>>,
+    write_interface: BufWriter<Box<dyn SerialPort>>,
     // TODO optimise
     // the u8 basically acts like a semaphore, once it reaches 0 we know we
     // received answers from all motors. it is initialized to the current motor
@@ -183,7 +187,7 @@ impl InnerDriver {
     fn receive_msg(&mut self) -> Result<Msg, DriverError> {
         // size chosen more or less randomly, should fit most messages
         let mut buf = Vec::with_capacity(64);
-        self.interface.read_until(b'\r', &mut buf)?;
+        self.read_interface.read_until(b'\r', &mut buf)?;
         // there can't be a remainder since we only read till the first '\r'
         let (_, wrap) = MsgWrap::parse(&buf).finish()?;
         match wrap {
@@ -337,7 +341,8 @@ impl InnerDriver {
         // to it
         let imotor = self.motors.get(&address).unwrap();
         ensure!(imotor.available, DriverError::NotAvailable);
-        write!(self.interface.get_mut(), "#{}{}\r", address, args)?;
+        write!(self.write_interface, "#{}{}\r", address, args)?;
+        self.write_interface.flush()?;
         Ok(())
     }
 
@@ -365,7 +370,7 @@ impl InnerDriver {
             .fold(0, std::ops::Add::add);
         // TODO optimise sending by not copying message 2 times
         // size chosen more or less randomly, should fit most messages
-        let iface = self.interface.get_mut();
+        let iface = &mut self.write_interface;
         iface.write_all(b"#*")?;
         // if we gotta wait, we need to save what we sent, otherwise not
         if res_cnt > 0 {
@@ -377,6 +382,7 @@ impl InnerDriver {
             iface.write_fmt(args)?;
         }
         iface.write_all(b"\r")?;
+        iface.flush()?;
         if res_cnt == 0 {
             Ok(RespondMode::Quiet)
         } else {
@@ -429,20 +435,21 @@ impl Driver {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let driver = Driver::new(s);
+    /// let driver = Driver::new(s).unwrap();
     /// ```
-    pub fn new(interface: Box<dyn SerialPort>) -> Self {
-        Driver {
+    pub fn new(interface: Box<dyn SerialPort>) -> Result<Self, DriverError> {
+        Ok(Driver {
             inner: Rc::new(RefCell::new(InnerDriver {
                 // wrap into bufreader so receiving until '\r' is easier
-                interface: BufReader::new(interface),
+                read_interface: BufReader::new(interface.try_clone()?),
+                write_interface: BufWriter::new(interface),
                 // chosen more or less arbitrarily
                 all: None,
                 all_exists: false,
                 // maximium number of motors
                 motors: HashMap::with_capacity(254),
             })),
-        }
+        })
     }
 
     /// Returns a motor of the given address. `respond_mode` ist the respond mode
@@ -468,7 +475,7 @@ impl Driver {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let mut driver = Driver::new(s);
+    /// let mut driver = Driver::new(s).unwrap();
     /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     /// ```
     pub fn add_motor(
@@ -527,7 +534,7 @@ impl Driver {
     ///     .timeout(Duration::from_secs(1))
     ///     .open()
     ///     .unwrap();
-    /// let mut driver = Driver::new(s);
+    /// let mut driver = Driver::new(s).unwrap();
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
     pub fn add_all_motor(&mut self) -> Result<AllMotor<NoSendAutoStatus>, DriverError> {
