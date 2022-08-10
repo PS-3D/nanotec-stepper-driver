@@ -134,27 +134,6 @@ fn motorstop_display() {
 //
 
 #[test]
-fn respondmode_parse() {
-    let (_, m) = RespondMode::parse(b"+0").finish().unwrap();
-    let expected = RespondMode::Quiet;
-    assert_eq!(m, expected)
-}
-
-//
-
-#[test]
-#[should_panic]
-fn respondmode_parse_oob() {
-    let (_, _) = RespondMode::parse(b"+3").finish().unwrap();
-}
-
-#[test]
-#[should_panic]
-fn respondmode_parse_garbage() {
-    let (_, _) = RespondMode::parse(b"asdf").finish().unwrap();
-}
-
-#[test]
 fn respondmode_display() {
     let s = format!("{}", RespondMode::NotQuiet);
     let expected = "1";

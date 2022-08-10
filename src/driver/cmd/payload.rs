@@ -627,10 +627,6 @@ pub enum RespondMode {
 }
 
 impl RespondMode {
-    pub(crate) fn parse<'b>(s: &'b [u8]) -> IResult<&'b [u8], Self, ParseError<&[u8]>> {
-        parse_enum_value(s, parse_su8, RespondMode::from_u8)
-    }
-
     pub fn is_quiet(&self) -> bool {
         *self == RespondMode::Quiet
     }
