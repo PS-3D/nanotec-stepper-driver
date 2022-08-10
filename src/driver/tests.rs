@@ -7,7 +7,7 @@ use nanotec_stepper_driver_test::Interface;
 #[test]
 fn receive_single() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     inner.motors.get_mut(&1).unwrap().available = false;
@@ -24,7 +24,7 @@ fn receive_single() {
 #[test]
 fn receive_single_multiple() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let _m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
@@ -44,7 +44,7 @@ fn receive_single_multiple() {
 #[test]
 fn receive_single_other_motor() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     interface.add_read(b"2A\r");
@@ -63,7 +63,7 @@ fn receive_single_other_motor() {
 #[test]
 fn receive_single_all() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     interface.add_read(b"*A\r");
@@ -82,7 +82,7 @@ fn receive_single_all() {
 #[test]
 fn receive_all() {
     let mut interface = Interface::new();
-    let driver = Driver::new(interface.clone());
+    let driver = Driver::new(Box::new(interface.clone()));
     let mut inner = driver.inner.borrow_mut();
     interface.add_read(b"*A\r");
     interface.add_read(b"*A\r");
@@ -98,7 +98,7 @@ fn receive_all() {
 #[test]
 fn receive_all_single() {
     let mut interface = Interface::new();
-    let driver = Driver::new(interface.clone());
+    let driver = Driver::new(Box::new(interface.clone()));
     let mut inner = driver.inner.borrow_mut();
     interface.add_read(b"1A\r");
     inner.all = Some((1, b"A".to_vec()));
@@ -117,7 +117,7 @@ fn receive_all_single() {
 #[test]
 fn send_single_no_response() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     interface.add_write(b"#1A\r");
@@ -130,7 +130,7 @@ fn send_single_no_response() {
 #[test]
 fn send_single_no_response_waiting_all() {
     let interface = Interface::new();
-    let driver = Driver::new(interface.clone());
+    let driver = Driver::new(Box::new(interface.clone()));
     let mut inner = driver.inner.borrow_mut();
     inner.all = Some((1, b"A".to_vec()));
 
@@ -142,7 +142,7 @@ fn send_single_no_response_waiting_all() {
 #[test]
 fn send_single_no_response_waiting() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     inner.motors.get_mut(&1).unwrap().available = false;
@@ -156,7 +156,7 @@ fn send_single_no_response_waiting() {
 #[test]
 fn send_single_with_response() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     interface.add_write(b"#1A\r");
@@ -171,7 +171,7 @@ fn send_single_with_response() {
 #[test]
 fn send_single_with_response_waiting_all() {
     let interface = Interface::new();
-    let driver = Driver::new(interface.clone());
+    let driver = Driver::new(Box::new(interface.clone()));
     let mut inner = driver.inner.borrow_mut();
     inner.all = Some((1, b"A".to_vec()));
 
@@ -183,7 +183,7 @@ fn send_single_with_response_waiting_all() {
 #[test]
 fn send_single_with_response_waiting() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     inner.motors.get_mut(&1).unwrap().available = false;
@@ -197,7 +197,7 @@ fn send_single_with_response_waiting() {
 #[test]
 fn send_all_not_quiet() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let _m2 = driver.add_motor(2, RespondMode::Quiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
@@ -213,7 +213,7 @@ fn send_all_not_quiet() {
 #[test]
 fn send_all_quiet() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let _m1 = driver.add_motor(1, RespondMode::Quiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
     interface.add_write(b"#*A\r");
@@ -227,7 +227,7 @@ fn send_all_quiet() {
 #[test]
 fn send_all_waiting() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let _m2 = driver.add_motor(2, RespondMode::Quiet).unwrap();
     let mut inner = driver.inner.borrow_mut();
@@ -242,7 +242,7 @@ fn send_all_waiting() {
 #[test]
 fn send_all_all_waiting() {
     let interface = Interface::new();
-    let driver = Driver::new(interface);
+    let driver = Driver::new(Box::new(interface));
     let mut inner = driver.inner.borrow_mut();
     inner.all = Some((1, b"test".to_vec()));
 
@@ -254,7 +254,7 @@ fn send_all_all_waiting() {
 #[test]
 fn add_motor() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
 
     let _m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 
@@ -268,7 +268,7 @@ fn add_motor() {
 #[test]
 fn add_motor_already_exists() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
 
     let _m1 = driver.add_motor(1, RespondMode::Quiet).unwrap();
     let r = driver.add_motor(1, RespondMode::NotQuiet);
@@ -283,7 +283,7 @@ fn add_motor_already_exists() {
 #[test]
 fn add_motor_multiple_times() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
 
     let m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     // this is artificial, in the real world this would only happen if motor
@@ -301,7 +301,7 @@ fn add_motor_multiple_times() {
 #[test]
 fn add_all_motor() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
 
     let _a1 = driver.add_all_motor().unwrap();
 
@@ -313,7 +313,7 @@ fn add_all_motor() {
 #[test]
 fn add_all_motor_already_exists() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
 
     let _a1 = driver.add_all_motor().unwrap();
     let r = driver.add_all_motor();
@@ -328,7 +328,7 @@ fn add_all_motor_already_exists() {
 #[test]
 fn add_all_motor_multiple_times() {
     let interface = Interface::new();
-    let mut driver = Driver::new(interface);
+    let mut driver = Driver::new(Box::new(interface));
 
     let a1 = driver.add_all_motor().unwrap();
     // this is artificial, in the real world this would only happen if motor

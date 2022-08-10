@@ -6,7 +6,6 @@ use super::{
     },
     ResponseError, ResponseHandle,
 };
-use serialport::SerialPort;
 use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 use thiserror::Error;
 
@@ -17,15 +16,15 @@ use thiserror::Error;
 // since for write commands we only need to check if the payload matched what we
 // sent and it also makes WriteResponseHandle::wait a bit faster
 #[derive(Debug)]
-pub(in super::super) struct WriteResponseHandle<I: SerialPort> {
-    driver: Rc<RefCell<InnerDriver<I>>>,
+pub(in super::super) struct WriteResponseHandle {
+    driver: Rc<RefCell<InnerDriver>>,
     address: MotorAddress,
     // payload we sent
     sent: Vec<u8>,
 }
 
-impl<I: SerialPort> WriteResponseHandle<I> {
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress, sent: Vec<u8>) -> Self {
+impl WriteResponseHandle {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: MotorAddress, sent: Vec<u8>) -> Self {
         Self {
             driver,
             address,
@@ -34,7 +33,7 @@ impl<I: SerialPort> WriteResponseHandle<I> {
     }
 }
 
-impl<I: SerialPort> ResponseHandle for WriteResponseHandle<I> {
+impl ResponseHandle for WriteResponseHandle {
     type Ret = ();
 
     // the whole match error and drop shenannigans are needed to statisfy the
@@ -98,12 +97,12 @@ impl ResponseHandle for DummyResponseHandle {
 // (Tho in the api we limit it to write commands only, since read commands without
 // an answer would be sortof stupid)
 #[derive(Debug)]
-pub(in super::super) enum WrapperResponseHandle<I: SerialPort> {
-    Write(WriteResponseHandle<I>),
+pub(in super::super) enum WrapperResponseHandle {
+    Write(WriteResponseHandle),
     Dummy(DummyResponseHandle),
 }
 
-impl<I: SerialPort> ResponseHandle for WrapperResponseHandle<I> {
+impl ResponseHandle for WrapperResponseHandle {
     type Ret = ();
 
     fn wait(self) -> Result<(), ResponseError<Self, (), DriverError>> {
@@ -132,20 +131,17 @@ impl<I: SerialPort> ResponseHandle for WrapperResponseHandle<I> {
 /// command would be [`Motor::start_sending_auto_status`].
 #[derive(Error)]
 #[error("{}", .1)]
-pub struct MotorMappingError<I: SerialPort, AS: AutoStatusMode>(
-    pub Motor<I, AS>,
-    #[source] pub DriverError,
-);
+pub struct MotorMappingError<AS: AutoStatusMode>(pub Motor<AS>, #[source] pub DriverError);
 
-impl<I: SerialPort, AS: AutoStatusMode> From<MotorMappingError<I, AS>> for DriverError {
-    fn from(e: MotorMappingError<I, AS>) -> Self {
+impl<AS: AutoStatusMode> From<MotorMappingError<AS>> for DriverError {
+    fn from(e: MotorMappingError<AS>) -> Self {
         e.1
     }
 }
 
 // have to implement manually because we can't print a debug repr of Motor<I, AS>
 // if we don't restrict SerialPort and we don't really want to do that
-impl<I: SerialPort, AS: AutoStatusMode> Debug for MotorMappingError<I, AS> {
+impl<AS: AutoStatusMode> Debug for MotorMappingError<AS> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "MotorMappingError(_, {:?})", self.1)
     }
@@ -163,27 +159,25 @@ impl<I: SerialPort, AS: AutoStatusMode> Debug for MotorMappingError<I, AS> {
 // so wait can be called again and the operation might succed after all.
 // If it succeds we apply the mapping function and return the new motor.
 #[derive(Debug)]
-pub(in super::super) struct MotorMappingResponseHandle<I, ASI, ASO, F>
+pub(in super::super) struct MotorMappingResponseHandle<ASI, ASO, F>
 where
-    I: SerialPort,
     ASI: AutoStatusMode + Debug,
     ASO: AutoStatusMode + Debug,
-    F: FnOnce(Motor<I, ASI>) -> Motor<I, ASO>,
+    F: FnOnce(Motor<ASI>) -> Motor<ASO>,
 {
-    motor: Motor<I, ASI>,
-    handle: WrapperResponseHandle<I>,
+    motor: Motor<ASI>,
+    handle: WrapperResponseHandle,
     mapper: F,
     markermo: PhantomData<ASO>,
 }
 
-impl<I, ASI, ASO, F> MotorMappingResponseHandle<I, ASI, ASO, F>
+impl<ASI, ASO, F> MotorMappingResponseHandle<ASI, ASO, F>
 where
-    I: SerialPort,
     ASI: AutoStatusMode + Debug,
     ASO: AutoStatusMode + Debug,
-    F: FnOnce(Motor<I, ASI>) -> Motor<I, ASO>,
+    F: FnOnce(Motor<ASI>) -> Motor<ASO>,
 {
-    pub fn new(motor: Motor<I, ASI>, handle: WrapperResponseHandle<I>, f: F) -> Self {
+    pub fn new(motor: Motor<ASI>, handle: WrapperResponseHandle, f: F) -> Self {
         Self {
             motor,
             handle,
@@ -193,19 +187,15 @@ where
     }
 }
 
-impl<I, ASI, ASO, F> ResponseHandle<MotorMappingError<I, ASI>>
-    for MotorMappingResponseHandle<I, ASI, ASO, F>
+impl<ASI, ASO, F> ResponseHandle<MotorMappingError<ASI>> for MotorMappingResponseHandle<ASI, ASO, F>
 where
-    I: SerialPort,
     ASI: AutoStatusMode + Debug,
     ASO: AutoStatusMode + Debug,
-    F: FnOnce(Motor<I, ASI>) -> Motor<I, ASO>,
+    F: FnOnce(Motor<ASI>) -> Motor<ASO>,
 {
-    type Ret = Motor<I, ASO>;
+    type Ret = Motor<ASO>;
 
-    fn wait(
-        self,
-    ) -> Result<Motor<I, ASO>, ResponseError<Self, Motor<I, ASO>, MotorMappingError<I, ASI>>>
+    fn wait(self) -> Result<Motor<ASO>, ResponseError<Self, Motor<ASO>, MotorMappingError<ASI>>>
     where
         Self: Sized,
     {

@@ -7,7 +7,7 @@ use nanotec_stepper_driver_test::Interface;
 #[test]
 fn single() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     interface.add_cmd_echo(b"#1p2\r");
     m1.set_positioning_mode(PositioningMode::Absolute)
@@ -54,7 +54,7 @@ fn single() {
 #[test]
 fn concurrent() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
 
@@ -137,7 +137,7 @@ fn concurrent() {
 #[test]
 fn all() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
     let mut all = driver.add_all_motor().unwrap();
@@ -161,7 +161,7 @@ fn all() {
 #[test]
 fn quiet() {
     let mut interface = Interface::new();
-    let mut driver = Driver::new(interface.clone());
+    let mut driver = Driver::new(Box::new(interface.clone()));
     let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
     let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
     let mut all = driver.add_all_motor().unwrap();

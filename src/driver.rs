@@ -21,7 +21,7 @@ use serialport::SerialPort;
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
-    fmt::Arguments,
+    fmt::{Arguments, Debug},
     io::{self, BufRead, BufReader, Write},
     rc::Rc,
 };
@@ -103,10 +103,9 @@ struct InnerMotor {
     queue: VecDeque<Vec<u8>>,
 }
 
-#[derive(Debug)]
-struct InnerDriver<I: SerialPort> {
+struct InnerDriver {
     // TODO make interface also BufWriter so we make less syscalls
-    interface: BufReader<I>,
+    interface: BufReader<Box<dyn SerialPort>>,
     // TODO optimise
     // the u8 basically acts like a semaphore, once it reaches 0 we know we
     // received answers from all motors. it is initialized to the current motor
@@ -116,7 +115,7 @@ struct InnerDriver<I: SerialPort> {
     motors: HashMap<u8, InnerMotor>,
 }
 
-impl<I: SerialPort> InnerDriver<I> {
+impl InnerDriver {
     // Should only be called by the drop function in Motor
     pub fn drop_motor(&mut self, address: &u8) {
         self.motors.remove(address);
@@ -386,6 +385,16 @@ impl<I: SerialPort> InnerDriver<I> {
     }
 }
 
+impl Debug for InnerDriver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "InnerDriver {{ interface: _, all: {:?}, all_exists: {:?}, motors: {:?} }}",
+            self.all, self.all_exists, self.motors
+        )
+    }
+}
+
 //
 
 /// Represents a single Rs485 connection with motors attached to it
@@ -400,11 +409,11 @@ impl<I: SerialPort> InnerDriver<I> {
 /// that originiated from the driver are dropped is the interface acually dropped,
 /// but not closed.
 #[derive(Debug)]
-pub struct Driver<I: SerialPort> {
-    inner: Rc<RefCell<InnerDriver<I>>>,
+pub struct Driver {
+    inner: Rc<RefCell<InnerDriver>>,
 }
 
-impl<I: SerialPort> Driver<I> {
+impl Driver {
     /// Returns new Driver. `I` is the interface used to actually communicate
     /// with the motors. Usually it's a serialport. Since the motors usually
     /// take a while to reply, especially when they're moving, the timeout of `I`
@@ -418,11 +427,11 @@ impl<I: SerialPort> Driver<I> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let driver = Driver::new(s);
     /// ```
-    pub fn new(interface: I) -> Self {
+    pub fn new(interface: Box<dyn SerialPort>) -> Self {
         Driver {
             inner: Rc::new(RefCell::new(InnerDriver {
                 // wrap into bufreader so receiving until '\r' is easier
@@ -457,7 +466,7 @@ impl<I: SerialPort> Driver<I> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -466,7 +475,7 @@ impl<I: SerialPort> Driver<I> {
         &mut self,
         address: u8,
         respond_mode: RespondMode,
-    ) -> Result<Motor<I, NoSendAutoStatus>, DriverError> {
+    ) -> Result<Motor<NoSendAutoStatus>, DriverError> {
         ensure!(
             address >= 1 && address <= 254,
             DriverError::InvalidAddress(address)
@@ -516,12 +525,12 @@ impl<I: SerialPort> Driver<I> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
-    pub fn add_all_motor(&mut self) -> Result<AllMotor<I, NoSendAutoStatus>, DriverError> {
+    pub fn add_all_motor(&mut self) -> Result<AllMotor<NoSendAutoStatus>, DriverError> {
         let mut inner = self.inner.as_ref().borrow_mut();
         ensure!(
             !inner.all_exists,

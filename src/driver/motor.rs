@@ -29,12 +29,11 @@ use nom::{
     sequence::{preceded, tuple},
     Finish, Parser,
 };
-use serialport::SerialPort;
 use std::{cell::RefCell, fmt::Debug, io::Write, marker::PhantomData, mem, rc::Rc};
 
 type DResult<T> = Result<T, DriverError>;
 /// temporary alias, should be changed in the future
-pub type AllMotor<I, AS> = Motor<I, AS>;
+pub type AllMotor<AS> = Motor<AS>;
 
 //
 
@@ -295,7 +294,7 @@ macro_rules! long_write {
 ///
 /// let s = serialport::new("/dev/ttyUSB0", 115200)
 ///     .timeout(Duration::from_secs(1))
-///     .open_native()
+///     .open()
 ///     .unwrap();
 /// let mut driver = Driver::new(s);
 /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -319,7 +318,7 @@ macro_rules! long_write {
 ///
 /// let s = serialport::new("/dev/ttyUSB0", 115200)
 ///     .timeout(Duration::from_secs(1))
-///     .open_native()
+///     .open()
 ///     .unwrap();
 /// let mut driver = Driver::new(s);
 /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -335,15 +334,15 @@ macro_rules! long_write {
 // needed for transmutation
 // unfortunately there's no better way
 #[repr(C)]
-pub struct Motor<I: SerialPort, AS: AutoStatusMode> {
-    driver: Rc<RefCell<InnerDriver<I>>>,
+pub struct Motor<AS: AutoStatusMode> {
+    driver: Rc<RefCell<InnerDriver>>,
     address: MotorAddress,
     marker_as: PhantomData<AS>,
 }
 
 // DResult<impl ResponseHandle<Ret = T>> is not an alias since aliases with
 // impl aren't supported yet
-impl<I: SerialPort, AS: AutoStatusMode> Motor<I, AS> {
+impl<AS: AutoStatusMode> Motor<AS> {
     pub fn get_motor_type(&mut self) -> DResult<impl ResponseHandle<Ret = MotorType>> {
         long_read!(self, map::MOTOR_TYPE, MotorType::parse)
     }
@@ -996,8 +995,8 @@ impl<I: SerialPort, AS: AutoStatusMode> Motor<I, AS> {
     }
 }
 
-impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
-    pub(super) fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: MotorAddress) -> Self {
+impl Motor<NoSendAutoStatus> {
+    pub(super) fn new(driver: Rc<RefCell<InnerDriver>>, address: MotorAddress) -> Self {
         Motor {
             driver,
             address,
@@ -1024,14 +1023,14 @@ impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
     pub fn start_sending_auto_status(
         self,
     ) -> Result<
-        impl ResponseHandle<MotorMappingError<I, NoSendAutoStatus>, Ret = Motor<I, SendAutoStatus>>,
-        MotorMappingError<I, NoSendAutoStatus>,
+        impl ResponseHandle<MotorMappingError<NoSendAutoStatus>, Ret = Motor<SendAutoStatus>>,
+        MotorMappingError<NoSendAutoStatus>,
     > {
         // helper just for setting the of the "returned" error of short_write
         // right, because it has the ? operator in it but only returns a driver
         // error and we need to map that.
         // FIXME don't use macro, then we don't have to use the helper function
-        fn w<I: SerialPort>(s: &Motor<I, NoSendAutoStatus>) -> DResult<WrapperResponseHandle<I>> {
+        fn w(s: &Motor<NoSendAutoStatus>) -> DResult<WrapperResponseHandle> {
             short_write!(s, map::AUTO_STATUS_SENDING, 1)
         }
         let rh = w(&self);
@@ -1045,7 +1044,8 @@ impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
                 //
                 // Unfortunately there's not really a better way, at least not
                 // one that won't really clutter code with unwraps and so on
-                mem::transmute::<Motor<I, NoSendAutoStatus>, Motor<I, SendAutoStatus>>(m)
+                // FIXME ?
+                mem::transmute::<Motor<NoSendAutoStatus>, Motor<SendAutoStatus>>(m)
             })),
             Err(e) => Err(MotorMappingError(self, e)),
         }
@@ -1060,7 +1060,7 @@ impl<I: SerialPort> Motor<I, NoSendAutoStatus> {
     }
 }
 
-impl<I: SerialPort> Motor<I, SendAutoStatus> {
+impl Motor<SendAutoStatus> {
     // FIXME block for allmotor, since we can't map all motor types
     /// Disables [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
     ///
@@ -1079,8 +1079,8 @@ impl<I: SerialPort> Motor<I, SendAutoStatus> {
     pub fn stop_sending_auto_status(
         self,
     ) -> Result<
-        impl ResponseHandle<MotorMappingError<I, SendAutoStatus>, Ret = Motor<I, NoSendAutoStatus>>,
-        MotorMappingError<I, SendAutoStatus>,
+        impl ResponseHandle<MotorMappingError<SendAutoStatus>, Ret = Motor<NoSendAutoStatus>>,
+        MotorMappingError<SendAutoStatus>,
     > {
         // FIXME implement seperate version for allmotor
         // NOTE this is just a hotfix sortof for not having implemented the
@@ -1093,7 +1093,7 @@ impl<I: SerialPort> Motor<I, SendAutoStatus> {
         // right, because it has the ? operator in it but only returns a driver
         // error and we need to map that.
         // FIXME don't use macro, then we don't have to use the helper function
-        fn w<I: SerialPort>(s: &Motor<I, SendAutoStatus>) -> DResult<WrapperResponseHandle<I>> {
+        fn w(s: &Motor<SendAutoStatus>) -> DResult<WrapperResponseHandle> {
             short_write!(s, map::AUTO_STATUS_SENDING, 0)
         }
         let rh = w(&self);
@@ -1107,7 +1107,8 @@ impl<I: SerialPort> Motor<I, SendAutoStatus> {
                 //
                 // Unfortunately there's not really a better way, at least not
                 // one that won't really clutter code with unwraps and so on
-                mem::transmute::<Motor<I, SendAutoStatus>, Motor<I, NoSendAutoStatus>>(m)
+                // FIXME ?
+                mem::transmute::<Motor<SendAutoStatus>, Motor<NoSendAutoStatus>>(m)
             })),
             Err(e) => Err(MotorMappingError(self, e)),
         }
@@ -1128,7 +1129,7 @@ impl<I: SerialPort> Motor<I, SendAutoStatus> {
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -1151,7 +1152,7 @@ impl<I: SerialPort> Motor<I, SendAutoStatus> {
     }
 }
 
-impl<I: SerialPort, AS: AutoStatusMode> Drop for Motor<I, AS> {
+impl<AS: AutoStatusMode> Drop for Motor<AS> {
     /// Removes this motor from the driver.\
     /// Afterwards, a motor with this address can be added again by calling
     /// [`Driver::add_motor`][super::Driver::add_motor].

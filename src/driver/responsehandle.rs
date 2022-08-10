@@ -271,7 +271,7 @@ where
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -305,7 +305,7 @@ where
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
@@ -323,7 +323,7 @@ where
     ///
     /// let s = serialport::new("/dev/ttyUSB0", 115200)
     ///     .timeout(Duration::from_secs(1))
-    ///     .open_native()
+    ///     .open()
     ///     .unwrap();
     /// let mut driver = Driver::new(s);
     /// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();

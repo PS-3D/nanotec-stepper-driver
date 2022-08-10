@@ -4,17 +4,16 @@ use super::{
     super::{DriverError, InnerDriver},
     ResponseError, ResponseHandle,
 };
-use serialport::SerialPort;
 use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 
 //
 
 #[derive(Debug)]
-pub(in super::super) struct ReadResponseHandle<I: SerialPort, T, P>
+pub(in super::super) struct ReadResponseHandle<T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
-    driver: Rc<RefCell<InnerDriver<I>>>,
+    driver: Rc<RefCell<InnerDriver>>,
     address: u8,
     // should parse the payload of the message (command without #<address> and \r)
     // and return a T from it
@@ -26,11 +25,11 @@ where
 // implementations for read and write were split so we don't need to parse as much
 // since for write commands we only need to check if the payload matched what we
 // sent and it also makes WriteResponseHandle::wait a bit faster
-impl<I: SerialPort, T, P> ReadResponseHandle<I, T, P>
+impl<T, P> ReadResponseHandle<T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: u8, parser: P) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: u8, parser: P) -> Self {
         Self {
             driver,
             address,
@@ -40,7 +39,7 @@ where
     }
 }
 
-impl<I: SerialPort, T, P> ResponseHandle for ReadResponseHandle<I, T, P>
+impl<T, P> ResponseHandle for ReadResponseHandle<T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
@@ -70,18 +69,18 @@ where
 //
 
 #[derive(Debug)]
-pub(in super::super) struct StatusResponseHandle<I: SerialPort> {
-    driver: Rc<RefCell<InnerDriver<I>>>,
+pub(in super::super) struct StatusResponseHandle {
+    driver: Rc<RefCell<InnerDriver>>,
     address: u8,
 }
 
-impl<I: SerialPort> StatusResponseHandle<I> {
-    pub fn new(driver: Rc<RefCell<InnerDriver<I>>>, address: u8) -> Self {
+impl StatusResponseHandle {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: u8) -> Self {
         Self { driver, address }
     }
 }
 
-impl<I: SerialPort> ResponseHandle for StatusResponseHandle<I> {
+impl ResponseHandle for StatusResponseHandle {
     type Ret = MotorStatus;
 
     fn wait(self) -> Result<MotorStatus, ResponseError<Self, MotorStatus, DriverError>> {
