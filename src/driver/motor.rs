@@ -1158,7 +1158,6 @@ impl<I: SerialPort, AS: AutoStatusMode> Drop for Motor<I, AS> {
     ///
     /// See also [here][`Drop`]
     fn drop(&mut self) {
-        println!("dropping");
         if let MotorAddress::Single(a) = self.address {
             self.driver.as_ref().borrow_mut().drop_motor(&a)
         } else {
