@@ -17,7 +17,7 @@ let s = serialport::new("/dev/ttyUSB0", 115200)
     .timeout(Duration::from_secs(1))
     .open()
     .unwrap();
-let mut driver = Driver::new(s);
+let mut driver = Driver::new(s).unwrap();
 let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 
 m1.load_record(3).unwrap().wait().unwrap();
@@ -26,7 +26,7 @@ m1.start_motor().unwrap().wait().unwrap();
 
 let steps = m1.get_travel_distance().unwrap().wait().unwrap();
 let max_freq = m1.get_max_frequency().unwrap().wait().unwrap();
-println!("Drove {} steps with a top speed of {} steps/min", steps, max_freq);
+println!("Driving {} steps with a top speed of {} steps/min", steps, max_freq);
 ```
 
 Some commands like [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf) were simplified or split to make using them easier and more intuitive:
@@ -39,7 +39,7 @@ let s = serialport::new("/dev/ttyUSB0", 115200)
     .timeout(Duration::from_secs(1))
     .open()
     .unwrap();
-let mut driver = Driver::new(s);
+let mut driver = Driver::new(s).unwrap();
 let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
 
 let cur_record = m1.get_current_record().unwrap().wait().unwrap();
