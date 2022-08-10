@@ -425,6 +425,12 @@ impl Driver {
     /// take a while to reply, especially when they're moving, the timeout of `I`
     /// (if there is one) should be set to something sensible and big.
     ///
+    /// # Errors
+    /// Be aware that this function will call [`SerialPort::try_clone`], meaning
+    /// that the serialport must be cloneable (for example, in linux one can mark
+    /// a serial port as exclusive). If this operation fails, a [`DriverError::SerialPortError`]
+    /// containing the actual error will be returned.
+    ///
     /// # Examples
     /// ```no_run
     /// # use nanotec_stepper_driver::Driver;
