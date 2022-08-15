@@ -19,12 +19,10 @@ use crate::util::ensure;
 use nom::Finish;
 use serialport::SerialPort;
 use std::{
-    cell::RefCell,
     collections::{HashMap, VecDeque},
     fmt::{Arguments, Debug},
     io::{self, BufRead, BufReader, BufWriter, Write},
-    rc::Rc,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 use thiserror::Error;
 
@@ -193,13 +191,13 @@ struct InnerDriver {
 
 impl InnerDriver {
     // Should only be called by the drop function in Motor
-    pub fn drop_motor(&mut self, address: &u8) {
+    pub fn drop_motor(&self, address: &u8) {
         let mut data = self.data.lock().unwrap();
         data.drop_motor(address);
     }
 
     // Should only be called by the drop function in Motor
-    pub fn drop_all_motor(&mut self) {
+    pub fn drop_all_motor(&self) {
         let mut data = self.data.lock().unwrap();
         data.drop_all_motor();
     }
@@ -207,7 +205,7 @@ impl InnerDriver {
     // LOCKS READ
     // -> data needs to be unlocked
     // receives a single msg from the interface and parses it into a Msg
-    fn receive_msg(&mut self) -> Result<Msg, DriverError> {
+    fn receive_msg(&self) -> Result<Msg, DriverError> {
         // size chosen more or less randomly, should fit most messages
         let mut buf = Vec::with_capacity(64);
         let mut read_interface = self.read_interface.lock().unwrap();
@@ -225,7 +223,7 @@ impl InnerDriver {
     // TODO write tests
     // receives a general message. if the message returned by receive_msg
     // isnt a general message, e.g. an automatic status, it is handled appropriately
-    fn receive_general_msg(&mut self) -> Result<Msg, DriverError> {
+    fn receive_general_msg(&self) -> Result<Msg, DriverError> {
         loop {
             // read gets locked (and unlocked) here
             let msg = self.receive_msg()?;
@@ -244,7 +242,7 @@ impl InnerDriver {
 
     // LOCKS DATA and LOCKS READ
     // -> both have to be unlocked
-    fn receive_status_msg(&mut self) -> Result<(u8, MotorStatus), DriverError> {
+    fn receive_status_msg(&self) -> Result<(u8, MotorStatus), DriverError> {
         loop {
             // read gets locked (and unlocked) here
             let msg = self.receive_msg()?;
@@ -271,7 +269,7 @@ impl InnerDriver {
     }
 
     // LOCKS DATA
-    pub fn set_respond_mode(&mut self, address: u8, mode: RespondMode) {
+    pub fn set_respond_mode(&self, address: u8, mode: RespondMode) {
         let mut data = self.data.lock().unwrap();
         // shouldn't panic since it's only called from motor, where the address
         // is definitely in the driver
@@ -279,14 +277,14 @@ impl InnerDriver {
     }
 
     // LOCKS DATA
-    pub fn set_respond_mode_all(&mut self, mode: RespondMode) {
+    pub fn set_respond_mode_all(&self, mode: RespondMode) {
         let mut data = self.data.lock().unwrap();
         data.motors.values_mut().for_each(|m| m.respond_mode = mode);
     }
 
     // LOCKS DATA and LOCKS READ
     // TODO error out if cmd for other motor is received and that motor wasn't waiting?
-    pub fn receive_single(&mut self, address: u8) -> Result<Vec<u8>, DriverError> {
+    pub fn receive_single(&self, address: u8) -> Result<Vec<u8>, DriverError> {
         // data gets locked and unlocked here
         let qfront = {
             let mut data = self.data.lock().unwrap();
@@ -327,7 +325,7 @@ impl InnerDriver {
         }
     }
 
-    pub fn receive_all(&mut self) -> Result<Vec<u8>, DriverError> {
+    pub fn receive_all(&self) -> Result<Vec<u8>, DriverError> {
         if self.data.lock().unwrap().is_waiting_all() {
             // if we're waiting for a response from all motors, there shouldn't
             // be a response from one with a singular address so we can massively
@@ -354,7 +352,7 @@ impl InnerDriver {
         Ok(self.data.lock().unwrap().all.take().unwrap().1)
     }
 
-    pub fn receive_status(&mut self, address: u8) -> Result<MotorStatus, DriverError> {
+    pub fn receive_status(&self, address: u8) -> Result<MotorStatus, DriverError> {
         // locks and unlocks data
         let autostatus = {
             let mut data = self.data.lock().unwrap();
@@ -388,7 +386,7 @@ impl InnerDriver {
     // where there will always be a response. this isn't the case with send_all
     // since there only write functions are allowed
     pub fn send_single_no_response(
-        &mut self,
+        &self,
         address: u8,
         args: Arguments<'_>,
     ) -> Result<(), DriverError> {
@@ -408,7 +406,7 @@ impl InnerDriver {
     }
 
     pub fn send_single_with_response(
-        &mut self,
+        &self,
         address: u8,
         args: Arguments<'_>,
     ) -> Result<(), DriverError> {
@@ -419,7 +417,7 @@ impl InnerDriver {
         Ok(())
     }
 
-    pub fn send_all(&mut self, args: Arguments<'_>) -> Result<RespondMode, DriverError> {
+    pub fn send_all(&self, args: Arguments<'_>) -> Result<RespondMode, DriverError> {
         let mut data = self.data.lock().unwrap();
         // since messages to all motors shouldn't happen that often it can take
         // a bit longer. if it's a problem a semaphore would be a fix for it
@@ -480,7 +478,7 @@ impl Debug for InnerDriver {
 /// but not closed.
 #[derive(Debug)]
 pub struct Driver {
-    inner: Rc<RefCell<InnerDriver>>,
+    inner: Arc<InnerDriver>,
 }
 
 impl Driver {
@@ -509,7 +507,7 @@ impl Driver {
     /// ```
     pub fn new(interface: Box<dyn SerialPort>) -> Result<Self, DriverError> {
         Ok(Driver {
-            inner: Rc::new(RefCell::new(InnerDriver {
+            inner: Arc::new(InnerDriver {
                 // wrap into bufreader so receiving until '\r' is easier
                 read_interface: Mutex::new(BufReader::new(interface.try_clone()?)),
                 write_interface: Mutex::new(BufWriter::new(interface)),
@@ -519,7 +517,7 @@ impl Driver {
                     // maximium number of motors
                     motors: HashMap::with_capacity(254),
                 }),
-            })),
+            }),
         })
     }
 
@@ -558,7 +556,7 @@ impl Driver {
             address >= 1 && address <= 254,
             DriverError::InvalidAddress(address)
         );
-        let inner = self.inner.as_ref().borrow_mut();
+        let inner = &self.inner;
         let mut data = inner.data.lock().unwrap();
         // Have to do it this way due to try_insert being nightly
         ensure!(
@@ -578,7 +576,7 @@ impl Driver {
                 },
             );
         Ok(Motor::new(
-            self.inner.clone(),
+            Arc::clone(&self.inner),
             MotorAddress::Single(address),
         ))
     }
@@ -609,13 +607,13 @@ impl Driver {
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
     pub fn add_all_motor(&mut self) -> Result<AllMotor<NoSendAutoStatus>, DriverError> {
-        let inner = self.inner.as_ref().borrow_mut();
+        let inner = &self.inner;
         let mut data = inner.data.lock().unwrap();
         ensure!(
             !data.all_exists,
             DriverError::AlreadyExists(MotorAddress::All)
         );
         data.all_exists = true;
-        Ok(Motor::new(self.inner.clone(), MotorAddress::All))
+        Ok(Motor::new(Arc::clone(&self.inner), MotorAddress::All))
     }
 }

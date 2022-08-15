@@ -29,7 +29,7 @@ use nom::{
     sequence::{preceded, tuple},
     Finish, Parser,
 };
-use std::{cell::RefCell, fmt::Debug, io::Write, marker::PhantomData, mem, rc::Rc};
+use std::{fmt::Debug, io::Write, marker::PhantomData, mem, sync::Arc};
 
 type DResult<T> = Result<T, DriverError>;
 /// temporary alias, should be changed in the future
@@ -89,12 +89,12 @@ macro_rules! read {
         let address = $self
             .address
             .single_expect("Can't send a read command to all motors");
-        let mut driver = $self.driver.as_ref().borrow_mut();
+        let driver = &$self.driver;
         assert_eq!(driver.get_respond_mode(address), RespondMode::NotQuiet);
         // send command
         driver.send_single_with_response(address, $args)?;
         Ok(ReadResponseHandle::new(
-            $self.driver.clone(),
+            Arc::clone(&$self.driver),
             address,
             // parsing closure
             move |input| {
@@ -184,7 +184,7 @@ macro_rules! write {
     ($self:expr, $args:expr) => {{
         let rm = match $self.address {
             MotorAddress::Single(a) => {
-                let mut driver = $self.driver.as_ref().borrow_mut();
+                let driver = &$self.driver;
                 let rm = driver.get_respond_mode(a);
                 if rm == RespondMode::NotQuiet {
                     driver.send_single_with_response(a, $args)?;
@@ -193,7 +193,7 @@ macro_rules! write {
                 }
                 rm
             }
-            MotorAddress::All => $self.driver.as_ref().borrow_mut().send_all($args)?,
+            MotorAddress::All => $self.driver.send_all($args)?,
         };
         if rm == RespondMode::NotQuiet {
             // unfortunately there isn't a better way rn.
@@ -202,7 +202,7 @@ macro_rules! write {
             let mut sent = Vec::with_capacity(64);
             sent.write_fmt($args)?;
             Ok(WrapperResponseHandle::Write(WriteResponseHandle::new(
-                $self.driver.clone(),
+                Arc::clone(&$self.driver),
                 $self.address,
                 sent,
             )))
@@ -335,7 +335,7 @@ macro_rules! long_write {
 // unfortunately there's no better way
 #[repr(C)]
 pub struct Motor<AS: AutoStatusMode> {
-    driver: Rc<RefCell<InnerDriver>>,
+    driver: Arc<InnerDriver>,
     address: MotorAddress,
     marker_as: PhantomData<AS>,
 }
@@ -752,7 +752,6 @@ impl<AS: AutoStatusMode> Motor<AS> {
     pub fn get_respond_mode(&mut self) -> RespondMode {
         self.driver
             .as_ref()
-            .borrow()
             .get_respond_mode(self.address.single_expect("Can only read from one motor"))
     }
 
@@ -789,9 +788,9 @@ impl<AS: AutoStatusMode> Motor<AS> {
         mode: RespondMode,
     ) -> DResult<impl ResponseHandle<Ret = ()>> {
         if let MotorAddress::Single(a) = self.address {
-            self.driver.as_ref().borrow_mut().set_respond_mode(a, mode);
+            self.driver.as_ref().set_respond_mode(a, mode);
         } else {
-            self.driver.as_ref().borrow_mut().set_respond_mode_all(mode);
+            self.driver.as_ref().set_respond_mode_all(mode);
         }
         short_write!(self, map::READ_CURRENT_RECORD, mode)
     }
@@ -996,7 +995,7 @@ impl<AS: AutoStatusMode> Motor<AS> {
 }
 
 impl Motor<NoSendAutoStatus> {
-    pub(super) fn new(driver: Rc<RefCell<InnerDriver>>, address: MotorAddress) -> Self {
+    pub(super) fn new(driver: Arc<InnerDriver>, address: MotorAddress) -> Self {
         Motor {
             driver,
             address,
@@ -1144,7 +1143,7 @@ impl Motor<SendAutoStatus> {
     pub fn start_motor(
         &mut self,
     ) -> DResult<impl ResponseHandle<Ret = impl ResponseHandle<Ret = MotorStatus>>> {
-        let driver = self.driver.clone();
+        let driver = Arc::clone(&self.driver);
         // FIXME implement seperate version for all motors
         let address = self.address.single();
         short_write!(self, map::START_MOTOR, "")
@@ -1160,9 +1159,9 @@ impl<AS: AutoStatusMode> Drop for Motor<AS> {
     /// See also [here][`Drop`]
     fn drop(&mut self) {
         if let MotorAddress::Single(a) = self.address {
-            self.driver.as_ref().borrow_mut().drop_motor(&a)
+            self.driver.as_ref().drop_motor(&a)
         } else {
-            self.driver.as_ref().borrow_mut().drop_all_motor()
+            self.driver.as_ref().drop_all_motor()
         }
     }
 }
