@@ -3,6 +3,10 @@ use nanotec_stepper_driver::{
     RotationDirection,
 };
 use nanotec_stepper_driver_test::Interface;
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 #[test]
 fn single() {
@@ -132,6 +136,7 @@ fn concurrent() {
 
     assert_eq!(s1, MotorStatus::Ready);
     assert_eq!(s2, MotorStatus::Ready);
+    assert!(interface.is_empty())
 }
 
 #[test]
@@ -156,6 +161,7 @@ fn all() {
     interface.add_cmd_echo(b"#*A\r");
     interface.add_read(b"*A\r");
     all.start_motor().unwrap().wait().unwrap();
+    assert!(interface.is_empty());
 }
 
 #[test]
@@ -204,4 +210,60 @@ fn quiet() {
     interface.add_cmd_echo(b"#*A\r");
     interface.add_read(b"*A\r");
     all.start_motor().unwrap().wait().unwrap();
+    assert!(interface.is_empty());
+}
+
+#[test]
+fn estop() {
+    let mut interface = Interface::new();
+    let mut driver = Driver::new(Box::new(interface.clone())).unwrap();
+    let mut estop = driver.new_estop();
+    let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+
+    interface.add_write(b"#1A\r");
+    m1.start_motor().unwrap();
+
+    interface.add_write(b"#*S0\r");
+    interface.add_write(b"#*S0\r");
+    let i1 = Instant::now();
+    estop.estop(1).unwrap();
+    let i2 = Instant::now();
+    assert!(interface.is_empty());
+    assert!(i2 - i1 < Duration::from_micros(1500));
+    assert!(i2 - i1 > Duration::from_micros(500));
+}
+
+#[test]
+fn estop_multithread() {
+    let mut interface = Interface::new();
+    let mut driver = Driver::new(Box::new(interface.clone())).unwrap();
+    let mut estop = driver.new_estop();
+    let m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+
+    interface.add_cmd_echo(b"#1J1\r");
+    let mut m1 = m1.start_sending_auto_status().unwrap().wait().unwrap();
+
+    interface.add_cmd_echo(b"#1A\r");
+    let h1 = m1.start_motor().unwrap().wait().unwrap();
+
+    interface.add_write(b"#*S0\r");
+    interface.add_write(b"#*S0\r");
+    let ht = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(1));
+
+        let i1 = Instant::now();
+        estop.estop(1).unwrap();
+        let i2 = Instant::now();
+
+        assert!(i2 - i1 < Duration::from_micros(1500));
+        assert!(i2 - i1 > Duration::from_micros(500));
+    });
+
+    thread::sleep(Duration::from_micros(500));
+    interface.add_read(b"1j161\r");
+    let status = h1.wait().unwrap();
+
+    ht.join().unwrap();
+    assert!(interface.is_empty());
+    assert_eq!(status, MotorStatus::Ready);
 }

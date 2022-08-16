@@ -2,6 +2,7 @@
 mod tests;
 
 pub mod cmd;
+pub mod estop;
 mod map;
 pub mod motor;
 mod parse;
@@ -12,6 +13,7 @@ use self::{
         frame::{MotorAddress, Msg, MsgWrap},
         payload::{self, MotorStatus, RespondMode},
     },
+    estop::EStop,
     motor::{AllMotor, Motor, NoSendAutoStatus},
     parse::ParseError,
 };
@@ -22,7 +24,9 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::{Arguments, Debug},
     io::{self, BufRead, BufReader, BufWriter, Write},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
+    thread,
+    time::Duration,
 };
 use thiserror::Error;
 
@@ -352,6 +356,7 @@ impl InnerDriver {
         Ok(self.data.lock().unwrap().all.take().unwrap().1)
     }
 
+    // LOCKS DATA and LOCKS READ
     pub fn receive_status(&self, address: u8) -> Result<MotorStatus, DriverError> {
         // locks and unlocks data
         let autostatus = {
@@ -382,6 +387,7 @@ impl InnerDriver {
         }
     }
 
+    // LOCKS DATA and LOCKS WRITE
     // send_single split in 2 functions cause there are cases like reading values
     // where there will always be a response. this isn't the case with send_all
     // since there only write functions are allowed
@@ -405,6 +411,7 @@ impl InnerDriver {
         Ok(())
     }
 
+    // LOCKS DATA and LOCKS WRITE
     pub fn send_single_with_response(
         &self,
         address: u8,
@@ -417,6 +424,7 @@ impl InnerDriver {
         Ok(())
     }
 
+    // LOCKS DATA and LOCKS WRITE
     pub fn send_all(&self, args: Arguments<'_>) -> Result<RespondMode, DriverError> {
         let mut data = self.data.lock().unwrap();
         // since messages to all motors shouldn't happen that often it can take
@@ -450,6 +458,26 @@ impl InnerDriver {
         } else {
             Ok(RespondMode::NotQuiet)
         }
+    }
+
+    // LOCKS WRITE
+    // will cause invalid state
+    // for now there is no way to recover, so only way is to restart
+    pub fn estop(&self, millis: u64) -> Result<(), DriverError> {
+        fn send_stop(
+            i: &mut MutexGuard<BufWriter<Box<dyn SerialPort>>>,
+        ) -> Result<(), DriverError> {
+            write!(i, "#*{}0\r", map::STOP_MOTOR)?;
+            i.flush()?;
+            Ok(())
+        }
+        let mut write_interface = self.write_interface.lock().unwrap();
+        send_stop(&mut write_interface)?;
+        for _ in 0..millis {
+            thread::sleep(Duration::from_millis(1));
+            send_stop(&mut write_interface)?;
+        }
+        Ok(())
     }
 }
 
@@ -615,5 +643,10 @@ impl Driver {
         );
         data.all_exists = true;
         Ok(Motor::new(Arc::clone(&self.inner), MotorAddress::All))
+    }
+
+    /// Returns a new [`EStop`]
+    pub fn new_estop(&self) -> EStop {
+        EStop::new(Arc::clone(&self.inner))
     }
 }
