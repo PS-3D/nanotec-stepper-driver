@@ -3,7 +3,7 @@ mod tests;
 
 use super::super::{
     map,
-    parse::{parse_enum_value, parse_su16, parse_su32, parse_su8, ParseError},
+    parse::{finish_no_remainder, parse_enum_value, parse_su16, parse_su32, parse_su8, ParseError},
 };
 use chrono::naive::NaiveDate;
 use nom::{
@@ -335,11 +335,13 @@ impl Display for MotorStatus {
     }
 }
 
-pub(crate) fn parse_auto_status_payload(
-    s: &[u8],
-) -> IResult<&[u8], MotorStatus, ParseError<&[u8]>> {
+fn parse_auto_status_payload(s: &[u8]) -> IResult<&[u8], MotorStatus, ParseError<&[u8]>> {
     use nom::{bytes::complete::tag, sequence::preceded};
     preceded(tag(map::AUTO_STATUS), MotorStatus::parse)(s)
+}
+
+pub(crate) fn try_parse_auto_status(payload: &[u8]) -> Option<MotorStatus> {
+    finish_no_remainder(payload, parse_auto_status_payload).ok()
 }
 
 //

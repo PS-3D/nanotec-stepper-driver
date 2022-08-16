@@ -233,9 +233,7 @@ impl InnerDriver {
             let msg = self.receive_msg()?;
             // ignore error since error means that parser didn't match and
             // so we have to assume the message wasn't a status message
-            if let Some(status) =
-                parse::finish_no_remainder(&msg.payload, payload::parse_auto_status_payload).ok()
-            {
+            if let Some(status) = payload::try_parse_auto_status(&msg.payload) {
                 let mut data = self.data.lock().unwrap();
                 data.handle_status_msg(msg.address, status)?;
             } else {
@@ -250,9 +248,7 @@ impl InnerDriver {
         loop {
             // read gets locked (and unlocked) here
             let msg = self.receive_msg()?;
-            if let Some(status) =
-                parse::finish_no_remainder(&msg.payload, payload::parse_auto_status_payload).ok()
-            {
+            if let Some(status) = payload::try_parse_auto_status(&msg.payload) {
                 let saddr = msg
                     .address
                     .single_or(DriverError::UnexpectedResponse(msg.address))?;
