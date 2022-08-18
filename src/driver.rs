@@ -136,12 +136,45 @@ struct InnerDriver {
 }
 
 impl InnerDriver {
-    // Should only be called by the drop function in Motor
+    // should only be called by Driver::add_motor
+    // address should also be sanitychecked there
+    pub fn add_motor(&mut self, address: u8, respond_mode: RespondMode) -> Result<(), DriverError> {
+        // Have to do it this way due to try_insert being nightly
+        ensure!(
+            !self.motors.contains_key(&address),
+            DriverError::AlreadyExists(MotorAddress::Single(address))
+        );
+        self.motors
+            // chosen more or less randomly, 4 should suffice though
+            .insert(
+                address,
+                InnerMotor {
+                    available: true,
+                    send_autostatus: false,
+                    autostatus: None,
+                    respond_mode,
+                    queue: VecDeque::with_capacity(4),
+                },
+            );
+        Ok(())
+    }
+
+    // should only be called by Driver::add_all_motor
+    pub fn add_all_motor(&mut self) -> Result<(), DriverError> {
+        ensure!(
+            !self.all_exists,
+            DriverError::AlreadyExists(MotorAddress::All)
+        );
+        self.all_exists = true;
+        Ok(())
+    }
+
+    // Should only be called by Motor::drop
     pub fn drop_motor(&mut self, address: &u8) {
         self.motors.remove(address);
     }
 
-    // Should only be called by the drop function in Motor
+    // Should only be called by AllMotor::drop
     pub fn drop_all_motor(&mut self) {
         self.all_exists = false;
     }
@@ -527,26 +560,7 @@ impl Driver {
             address >= 1 && address <= 254,
             DriverError::InvalidAddress(address)
         );
-        let mut inner = self.inner.borrow_mut();
-        // FIXME move to innermotor
-        // Have to do it this way due to try_insert being nightly
-        ensure!(
-            !inner.motors.contains_key(&address),
-            DriverError::AlreadyExists(MotorAddress::Single(address))
-        );
-        inner
-            .motors
-            // chosen more or less randomly, 4 should suffice though
-            .insert(
-                address,
-                InnerMotor {
-                    available: true,
-                    send_autostatus: false,
-                    autostatus: None,
-                    respond_mode,
-                    queue: VecDeque::with_capacity(4),
-                },
-            );
+        self.inner.borrow_mut().add_motor(address, respond_mode)?;
         Ok(Motor::new(Rc::clone(&self.inner), address))
     }
 
@@ -576,13 +590,7 @@ impl Driver {
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
     pub fn add_all_motor(&mut self) -> Result<AllMotor, DriverError> {
-        let mut inner = self.inner.borrow_mut();
-        // FIXME move to InnerMotor
-        ensure!(
-            !inner.all_exists,
-            DriverError::AlreadyExists(MotorAddress::All)
-        );
-        inner.all_exists = true;
+        self.inner.borrow_mut().add_all_motor()?;
         Ok(AllMotor::new(Rc::clone(&self.inner)))
     }
 
