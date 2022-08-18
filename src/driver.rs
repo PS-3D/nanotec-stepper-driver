@@ -115,8 +115,17 @@ struct InnerMotor {
     queue: VecDeque<Vec<u8>>,
 }
 
-#[derive(Debug)]
-struct InnerDriverData {
+// only write is behind a mutex because EStop needs to be able to write
+// from any thread but since we don't have any guarantees when BufWriter
+// flushes, we need to sync it, otherwise we could write 2 messages at the
+// same time
+//
+// we dont make everything sync, because then we would also need to make all
+// operations threadsafe which is sortof unnecessary since communication with
+// the motors is in and of itself synchronous (more or less)
+struct InnerDriver {
+    read_interface: BufReader<Box<dyn SerialPort>>,
+    write_interface: Arc<Mutex<BufWriter<Box<dyn SerialPort>>>>,
     // TODO optimise
     // the u8 basically acts like a semaphore, once it reaches 0 we know we
     // received answers from all motors. it is initialized to the current motor
@@ -126,12 +135,14 @@ struct InnerDriverData {
     motors: Map<u8, InnerMotor>,
 }
 
-impl InnerDriverData {
-    fn drop_motor(&mut self, address: &u8) {
+impl InnerDriver {
+    // Should only be called by the drop function in Motor
+    pub fn drop_motor(&mut self, address: &u8) {
         self.motors.remove(address);
     }
 
-    fn drop_all_motor(&mut self) {
+    // Should only be called by the drop function in Motor
+    pub fn drop_all_motor(&mut self) {
         self.all_exists = false;
     }
 
@@ -185,32 +196,6 @@ impl InnerDriverData {
         imotor.queue.push_back(msg.payload);
         Ok(())
     }
-}
-
-// only write is behind a mutex because EStop needs to be able to write
-// from any thread but since we don't have any guarantees when BufWriter
-// flushes, we need to sync it, otherwise we could write 2 messages at the
-// same time
-//
-// we dont make everything sync, because then we would also need to make all
-// operations threadsafe which is sortof unnecessary since communication with
-// the motors is in and of itself synchronous (more or less)
-struct InnerDriver {
-    read_interface: BufReader<Box<dyn SerialPort>>,
-    write_interface: Arc<Mutex<BufWriter<Box<dyn SerialPort>>>>,
-    data: InnerDriverData,
-}
-
-impl InnerDriver {
-    // Should only be called by the drop function in Motor
-    pub fn drop_motor(&mut self, address: &u8) {
-        self.data.drop_motor(address);
-    }
-
-    // Should only be called by the drop function in Motor
-    pub fn drop_all_motor(&mut self) {
-        self.data.drop_all_motor();
-    }
 
     // receives a single msg from the interface and parses it into a Msg
     fn receive_msg(&mut self) -> Result<Msg, DriverError> {
@@ -235,7 +220,7 @@ impl InnerDriver {
             // ignore error since error means that parser didn't match and
             // so we have to assume the message wasn't a status message
             if let Some(status) = payload::try_parse_auto_status(&msg.payload) {
-                self.data.handle_status_msg(msg.address, status)?;
+                self.handle_status_msg(msg.address, status)?;
             } else {
                 return Ok(msg);
             }
@@ -252,7 +237,7 @@ impl InnerDriver {
                     .single_or(DriverError::UnexpectedResponse(msg.address))?;
                 return Ok((saddr, status));
             } else {
-                self.data.handle_general_msg(msg)?;
+                self.handle_general_msg(msg)?;
             }
         }
     }
@@ -260,33 +245,35 @@ impl InnerDriver {
     pub fn get_respond_mode(&self, address: u8) -> RespondMode {
         // shouldn't panic since it's only called from motor, where the address
         // is definitely in the driver
-        self.data.motors.get(&address).unwrap().respond_mode
+        self.motors.get(&address).unwrap().respond_mode
     }
 
     pub fn set_respond_mode(&mut self, address: u8, mode: RespondMode) {
         // shouldn't panic since it's only called from motor, where the address
         // is definitely in the driver
-        self.data.motors.get_mut(&address).unwrap().respond_mode = mode;
+        self.motors.get_mut(&address).unwrap().respond_mode = mode;
     }
 
     pub fn set_respond_mode_all(&mut self, mode: RespondMode) {
-        self.data
-            .motors
-            .values_mut()
-            .for_each(|m| m.respond_mode = mode);
+        self.motors.values_mut().for_each(|m| m.respond_mode = mode);
+    }
+
+    pub fn get_send_autostatus_all(&self) -> Map<u8, bool> {
+        self.motors
+            .iter()
+            .map(|(a, im)| (a.clone(), im.send_autostatus))
+            .collect()
+    }
+
+    pub fn set_send_autostatus(&mut self, address: u8, send: bool) {
+        self.motors.get_mut(&address).unwrap().send_autostatus = send;
     }
 
     // TODO error out if cmd for other motor is received and that motor wasn't waiting?
     pub fn receive_single(&mut self, address: u8) -> Result<Vec<u8>, DriverError> {
         // shouldn't panic because this shouldn't get called on an address that
         // doesn't already exist
-        let qfront = self
-            .data
-            .motors
-            .get_mut(&address)
-            .unwrap()
-            .queue
-            .pop_front();
+        let qfront = self.motors.get_mut(&address).unwrap().queue.pop_front();
         // if there's one already in the buffer, return that
         if let Some(p) = qfront {
             Ok(p)
@@ -299,7 +286,6 @@ impl InnerDriver {
                 let msg = self.receive_general_msg()?;
                 if let MotorAddress::Single(a) = msg.address {
                     let imotor = self
-                        .data
                         .motors
                         .get_mut(&a)
                         // if motor address was unknown
@@ -320,11 +306,11 @@ impl InnerDriver {
     }
 
     pub fn receive_all(&mut self) -> Result<Vec<u8>, DriverError> {
-        if self.data.is_waiting_all() {
+        if self.is_waiting_all() {
             // if we're waiting for a response from all motors, there shouldn't
             // be a response from one with a singular address so we can massively
             // simplify the receiving process
-            let allcnt = self.data.all.as_ref().unwrap().0;
+            let allcnt = self.all.as_ref().unwrap().0;
             for _ in 0..allcnt {
                 // locks and unlocks read
                 let msg = self.receive_general_msg()?;
@@ -334,7 +320,7 @@ impl InnerDriver {
                 );
                 {
                     // if were receiving there should be something in there
-                    let all = self.data.all.as_mut().unwrap();
+                    let all = self.all.as_mut().unwrap();
                     ensure!(
                         msg.payload == all.1,
                         DriverError::NonMatchingPayloads(msg.payload)
@@ -343,13 +329,13 @@ impl InnerDriver {
                 }
             }
         }
-        Ok(self.data.all.take().unwrap().1)
+        Ok(self.all.take().unwrap().1)
     }
 
     pub fn receive_status(&mut self, address: u8) -> Result<MotorStatus, DriverError> {
         // shouldn't panic since this method should only be called with addresses
         // that already exist
-        let imotor = self.data.motors.get_mut(&address).unwrap();
+        let imotor = self.motors.get_mut(&address).unwrap();
         if let Some(status) = imotor.autostatus {
             Ok(status)
         } else {
@@ -363,7 +349,7 @@ impl InnerDriver {
                     // again, in the future we probably have to make a type for
                     // Msg Payloads
                     // TODO make Msg Payload type
-                    self.data.handle_status_msg(status.0.into(), status.1)?;
+                    self.handle_status_msg(status.0.into(), status.1)?;
                 }
             }
         }
@@ -380,10 +366,10 @@ impl InnerDriver {
         // if we are waiting for a response from all motors we can't send to
         // a singular motor because we don't know if it's ready yet. only when
         // all motors answered we can be sure
-        ensure!(!self.data.is_waiting_all(), DriverError::NotAvailable);
+        ensure!(!self.is_waiting_all(), DriverError::NotAvailable);
         // shouldn't panic since the motor has to exist if a message was sent
         // to it
-        let imotor = self.data.motors.get(&address).unwrap();
+        let imotor = self.motors.get(&address).unwrap();
         ensure!(imotor.available, DriverError::NotAvailable);
         let mut write_interface = self.write_interface.lock().unwrap();
         write!(write_interface, "#{}{}\r", address, args)?;
@@ -397,7 +383,7 @@ impl InnerDriver {
         args: Arguments<'_>,
     ) -> Result<(), DriverError> {
         self.send_single_no_response(address, args)?;
-        self.data.motors.get_mut(&address).unwrap().available = false;
+        self.motors.get_mut(&address).unwrap().available = false;
         Ok(())
     }
 
@@ -405,11 +391,10 @@ impl InnerDriver {
         // since messages to all motors shouldn't happen that often it can take
         // a bit longer. if it's a problem a semaphore would be a fix for it
         ensure!(
-            self.data.motors.values().all(|m| m.available) && !self.data.is_waiting_all(),
+            self.motors.values().all(|m| m.available) && !self.is_waiting_all(),
             DriverError::NotAvailable
         );
         let res_cnt = self
-            .data
             .motors
             .values()
             .map(|m| m.respond_mode.is_responding() as u8)
@@ -423,7 +408,7 @@ impl InnerDriver {
             let mut sent = Vec::with_capacity(64);
             write!(sent, "{}", args)?;
             iface.write_all(&sent)?;
-            self.data.all = Some((res_cnt, sent));
+            self.all = Some((res_cnt, sent));
         } else {
             iface.write_fmt(args)?;
         }
@@ -445,8 +430,8 @@ impl Debug for InnerDriver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "InnerDriver {{ read_interface: _, write_interface: _, data: {:?} }}",
-            self.data,
+            "InnerDriver {{ read_interface: _, write_interface: _, all: {:?}, all_exists: {:?}, motors: {:?}}}",
+            self.all, self.all_exists, self.motors,
         )
     }
 }
@@ -499,12 +484,10 @@ impl Driver {
                 // wrap into bufreader so receiving until '\r' is easier
                 read_interface: BufReader::new(interface.try_clone()?),
                 write_interface: Arc::new(Mutex::new(BufWriter::new(interface))),
-                data: InnerDriverData {
-                    all: None,
-                    all_exists: false,
-                    // maximium number of motors
-                    motors: HashMap::with_capacity(254),
-                },
+                all: None,
+                all_exists: false,
+                // maximium number of motors
+                motors: HashMap::with_capacity(254),
             })),
         })
     }
@@ -548,11 +531,10 @@ impl Driver {
         // FIXME move to innermotor
         // Have to do it this way due to try_insert being nightly
         ensure!(
-            !inner.data.motors.contains_key(&address),
+            !inner.motors.contains_key(&address),
             DriverError::AlreadyExists(MotorAddress::Single(address))
         );
         inner
-            .data
             .motors
             // chosen more or less randomly, 4 should suffice though
             .insert(
@@ -597,10 +579,10 @@ impl Driver {
         let mut inner = self.inner.borrow_mut();
         // FIXME move to InnerMotor
         ensure!(
-            !inner.data.all_exists,
+            !inner.all_exists,
             DriverError::AlreadyExists(MotorAddress::All)
         );
-        inner.data.all_exists = true;
+        inner.all_exists = true;
         Ok(AllMotor::new(Rc::clone(&self.inner)))
     }
 

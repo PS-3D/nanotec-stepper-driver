@@ -2,9 +2,7 @@ pub(crate) mod map;
 pub(crate) mod read;
 pub(crate) mod write;
 
-use self::map::ResponseHandleMap;
-
-use super::{DriverError, Map};
+use super::DriverError;
 use std::{error::Error, fmt::Debug, marker::PhantomData};
 use thiserror::Error;
 
@@ -342,23 +340,6 @@ where
     fn wait(self) -> Result<Self::Ret, ResponseError<Self, Self::Ret, EF, ER>>
     where
         Self: Sized;
-}
-
-impl<EF, ER, H, T> ResponseHandle<EF, ER> for Map<u8, H>
-where
-    EF: Error + Into<DriverError>,
-    ER: Error + Into<DriverError>,
-    H: ResponseHandle<EF, ER, Ret = T>,
-{
-    type Ret = Map<u8, H>;
-
-    fn wait(self) -> Result<Self::Ret, ResponseError<Self, Self::Ret, EF, ER>>
-    where
-        Self: Sized,
-    {
-        for handle in self {}
-        todo!()
-    }
 }
 
 // TODO impl ResponseHandle<T> for Box<dyn ResponseHandle<T>>?

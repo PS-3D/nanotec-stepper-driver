@@ -10,6 +10,8 @@ use super::{
         },
         map,
         responsehandle::{
+            map::ResponseHandleMap,
+            read::StatusResponseHandle,
             write::{DummyResponseHandle, WrapperResponseHandle, WriteResponseHandle},
             ResponseHandle,
         },
@@ -77,17 +79,21 @@ impl AllMotor {
     // DResult<impl ResponseHandle<Ret = Option<BTreeMap<u8, impl ResponseHandle<Ret = MotorStatus>>>>>
     // and impliment ResponseHandle<Ret = BTreeMap<u8, T>> for BTreeMap<u8, impl ResponseHandle<Ret = T>>
     // then the user could decide to wait in a specific order or just ignore it
-    // TODO maybe implement ResponseHandle<Ret = Option<T>> for Option<impl ResponseHandle<T>>
-    // pub fn start_motor(
-    //     &mut self,
-    // ) -> DResult<impl ResponseHandle<Ret = Map<u8, impl ResponseHandle<Ret = MotorStatus>>>> {
-    //     let res_modes = self.short_write(map::START_MOTOR, "");
-    //     if res_modes.values().any(RespondMode::is_responding) {
-    //         Some()
-    //     } else {
-    //     }
-    //     todo!()
-    // }
+    // NOTE this is sortof difficult due to the whole recoverable error thing
+    pub fn start_motor(
+        &mut self,
+    ) -> DResult<impl ResponseHandle<Ret = Map<u8, impl ResponseHandle<Ret = MotorStatus>>>> {
+        let res_modes = self.short_write(map::START_MOTOR, "");
+        let send_status = self
+            .0
+            .borrow()
+            .get_send_autostatus_all()
+            .into_iter()
+            .filter(|kv| kv.1)
+            .map(|(a, _)| (a, StatusResponseHandle::new(Rc::clone(&self.0), a)))
+            .collect();
+        res_modes.map(move |h| h.map(move |_| send_status))
+    }
 }
 
 impl Drop for AllMotor {

@@ -679,8 +679,11 @@ impl Motor<NoSendAutoStatus> {
         MotorMappingError<NoSendAutoStatus>,
     > {
         let rh = self.short_write(map::AUTO_STATUS_SENDING, 1);
+        let driver = Rc::clone(&self.driver);
+        let address = self.address;
         match rh {
-            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| unsafe {
+            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, move |m| unsafe {
+                driver.borrow_mut().set_send_autostatus(address, true);
                 // Safety:
                 // Motor is repr(C), meaning we can assume the repr will be
                 // the same way
@@ -727,8 +730,11 @@ impl Motor<SendAutoStatus> {
         MotorMappingError<SendAutoStatus>,
     > {
         let rh = self.short_write(map::AUTO_STATUS_SENDING, 0);
+        let driver = Rc::clone(&self.driver);
+        let address = self.address;
         match rh {
-            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| unsafe {
+            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, move |m| unsafe {
+                driver.borrow_mut().set_send_autostatus(address, false);
                 // Safety:
                 // Motor is repr(C), meaning we can assume the repr will be
                 // the same way
