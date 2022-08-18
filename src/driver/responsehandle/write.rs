@@ -6,7 +6,7 @@ use super::{
     },
     ResponseError, ResponseHandle,
 };
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 use thiserror::Error;
 
 //
@@ -18,14 +18,14 @@ use thiserror::Error;
 // sent and it also makes WriteResponseHandle::wait a bit faster
 #[derive(Debug)]
 pub(in super::super) struct WriteResponseHandle {
-    driver: Arc<InnerDriver>,
+    driver: Rc<RefCell<InnerDriver>>,
     address: MotorAddress,
     // payload we sent
     sent: Vec<u8>,
 }
 
 impl WriteResponseHandle {
-    pub fn new(driver: Arc<InnerDriver>, address: MotorAddress, sent: Vec<u8>) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: MotorAddress, sent: Vec<u8>) -> Self {
         Self {
             driver,
             address,
@@ -40,7 +40,7 @@ impl ResponseHandle for WriteResponseHandle {
     // the whole match error and drop shenannigans are needed to statisfy the
     // borrow checker
     fn wait(self) -> Result<(), ResponseError<Self, (), DriverError>> {
-        let driver = &self.driver;
+        let mut driver = self.driver.borrow_mut();
         let payload = match self.address {
             MotorAddress::Single(a) => driver.receive_single(a),
             MotorAddress::All => driver.receive_all(),

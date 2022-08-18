@@ -1,5 +1,13 @@
-use super::{DriverError, InnerDriver};
-use std::sync::Arc;
+use serialport::SerialPort;
+
+use super::{map, DriverError};
+use std::{
+    io::BufWriter,
+    io::Write,
+    sync::{Arc, Mutex, MutexGuard},
+    thread,
+    time::Duration,
+};
 
 // in theory it should be possible to not use mutexes and instead clone
 // serialport again and wrap in in a BufWriter. that would/could in theory only
@@ -7,14 +15,15 @@ use std::sync::Arc;
 // writing at once. this might probably not be the best idea tho since BufWriter
 // does afaik not make any guarantees about flushing
 /// "Non-emergency emergency" stop
-#[derive(Debug)]
-pub struct EStop(Arc<InnerDriver>);
+pub struct EStop(Arc<Mutex<BufWriter<Box<dyn SerialPort>>>>);
 
 impl EStop {
-    pub(super) fn new(driver: Arc<InnerDriver>) -> Self {
+    pub(super) fn new(driver: Arc<Mutex<BufWriter<Box<dyn SerialPort>>>>) -> Self {
         EStop(driver)
     }
 
+    // will cause invalid state
+    // for now there is no way to recover, so only way is to restart
     /// Stops all motors in a "non-emergency emergency"
     ///
     /// This function sends a stop command with the quickstop ramp to all motors,
@@ -67,6 +76,19 @@ impl EStop {
     /// println!("motors stopped");
     /// ```
     pub fn estop(&mut self, millis: u64) -> Result<(), DriverError> {
-        self.0.estop(millis)
+        fn send_stop(
+            i: &mut MutexGuard<BufWriter<Box<dyn SerialPort>>>,
+        ) -> Result<(), DriverError> {
+            write!(i, "#*{}0\r", map::STOP_MOTOR)?;
+            i.flush()?;
+            Ok(())
+        }
+        let mut write_interface = self.0.lock().unwrap();
+        send_stop(&mut write_interface)?;
+        for _ in 0..millis {
+            thread::sleep(Duration::from_millis(1));
+            send_stop(&mut write_interface)?;
+        }
+        Ok(())
     }
 }

@@ -19,22 +19,23 @@ use super::{
 };
 use crate::util::ensure;
 use std::{
+    cell::RefCell,
     fmt::{Arguments, Debug, Display},
     io::Write,
-    sync::Arc,
+    rc::Rc,
 };
 
 #[derive(Debug)]
-pub struct AllMotor(Arc<InnerDriver>);
+pub struct AllMotor(Rc<RefCell<InnerDriver>>);
 
 // TODO docs
 impl AllMotor {
-    pub(in super::super) fn new(driver: Arc<InnerDriver>) -> Self {
+    pub(in super::super) fn new(driver: Rc<RefCell<InnerDriver>>) -> Self {
         Self(driver)
     }
 
     fn write(&self, args: Arguments<'_>) -> Result<WrapperResponseHandle, DriverError> {
-        let rm = self.0.send_all(args)?;
+        let rm = self.0.borrow_mut().send_all(args)?;
         Ok(match rm {
             RespondMode::NotQuiet => {
                 // unfortunately there isn't a better way rn.
@@ -43,7 +44,7 @@ impl AllMotor {
                 let mut sent = Vec::with_capacity(64);
                 sent.write_fmt(args)?;
                 WrapperResponseHandle::Write(WriteResponseHandle::new(
-                    Arc::clone(&self.0),
+                    Rc::clone(&self.0),
                     MotorAddress::All,
                     sent,
                 ))
@@ -68,11 +69,7 @@ impl AllMotor {
         &mut self,
         mode: RespondMode,
     ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        // FIXME TOC/TOU race condition
-        self.0.as_ref().set_respond_mode_all(mode);
-        // FIXME state corruption possible on fail of this write (even more so if
-        // you consider that for setting the respendmode to NotQuiet, the command
-        // could have worked but then, while reading the response)
+        self.0.borrow_mut().set_respond_mode_all(mode);
         self.short_write(map::READ_CURRENT_RECORD, mode)
     }
 
@@ -100,6 +97,6 @@ impl Drop for AllMotor {
     ///
     /// See also [here][`Drop`]
     fn drop(&mut self) {
-        self.0.as_ref().drop_all_motor()
+        self.0.borrow_mut().drop_all_motor()
     }
 }

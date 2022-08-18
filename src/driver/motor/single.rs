@@ -33,11 +33,12 @@ use nom::{
     Finish, Parser,
 };
 use std::{
+    cell::RefCell,
     fmt::{Arguments, Debug, Display},
     io::Write,
     marker::PhantomData,
     mem,
-    sync::Arc,
+    rc::Rc,
 };
 
 //
@@ -113,7 +114,7 @@ macro_rules! build_read_parser {
 // maybe in the future
 macro_rules! read {
     ($self:expr, $parser:expr, $args:expr) => {{
-        let driver = &$self.driver;
+        let mut driver = $self.driver.borrow_mut();
         assert_eq!(
             driver.get_respond_mode($self.address),
             RespondMode::NotQuiet
@@ -121,7 +122,7 @@ macro_rules! read {
         // send command
         driver.send_single_with_response($self.address, $args)?;
         Ok(ReadResponseHandle::new(
-            Arc::clone(&$self.driver),
+            Rc::clone(&$self.driver),
             $self.address,
             build_read_parser!($parser),
         ))
@@ -274,7 +275,7 @@ macro_rules! long_read {
 // unfortunately there's no better way
 #[repr(C)]
 pub struct Motor<AS: AutoStatusMode> {
-    driver: Arc<InnerDriver>,
+    driver: Rc<RefCell<InnerDriver>>,
     address: u8,
     marker_as: PhantomData<AS>,
 }
@@ -284,7 +285,7 @@ pub struct Motor<AS: AutoStatusMode> {
 impl<AS: AutoStatusMode> Motor<AS> {
     fn write(&self, args: Arguments<'_>) -> Result<WrapperResponseHandle, DriverError> {
         let rm = {
-            let driver = &self.driver;
+            let mut driver = self.driver.borrow_mut();
             // FIXME maybe move this logic to driver and return RespondMode
             let rm = driver.get_respond_mode(self.address);
             if rm == RespondMode::NotQuiet {
@@ -302,7 +303,7 @@ impl<AS: AutoStatusMode> Motor<AS> {
                 let mut sent = Vec::with_capacity(64);
                 sent.write_fmt(args)?;
                 WrapperResponseHandle::Write(WriteResponseHandle::new(
-                    Arc::clone(&self.driver),
+                    Rc::clone(&self.driver),
                     MotorAddress::Single(self.address),
                     sent,
                 ))
@@ -524,7 +525,7 @@ impl<AS: AutoStatusMode> Motor<AS> {
     /// a command from the motor but rather just returns a value stored within
     /// this struct. See also [`set_respond_mode`][Motor::set_respond_mode]
     pub fn get_respond_mode(&mut self) -> RespondMode {
-        self.driver.as_ref().get_respond_mode(self.address)
+        self.driver.borrow().get_respond_mode(self.address)
     }
 
     /// See [`set_respond_mode`][Motor::set_respond_mode]
@@ -560,7 +561,9 @@ impl<AS: AutoStatusMode> Motor<AS> {
         &mut self,
         mode: RespondMode,
     ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        self.driver.as_ref().set_respond_mode(self.address, mode);
+        self.driver
+            .borrow_mut()
+            .set_respond_mode(self.address, mode);
         self.short_write(map::READ_CURRENT_RECORD, mode)
     }
 
@@ -646,7 +649,7 @@ impl<AS: AutoStatusMode> Motor<AS> {
 }
 
 impl Motor<NoSendAutoStatus> {
-    pub(in super::super) fn new(driver: Arc<InnerDriver>, address: u8) -> Self {
+    pub(in super::super) fn new(driver: Rc<RefCell<InnerDriver>>, address: u8) -> Self {
         Motor {
             driver,
             address,
@@ -771,7 +774,7 @@ impl Motor<SendAutoStatus> {
     pub fn start_motor(
         &mut self,
     ) -> DResult<impl ResponseHandle<Ret = impl ResponseHandle<Ret = MotorStatus>>> {
-        let driver = Arc::clone(&self.driver);
+        let driver = Rc::clone(&self.driver);
         let address = self.address;
         self.short_write(map::START_MOTOR, "")
             .map(move |h| h.map(move |()| StatusResponseHandle::new(driver, address)))
@@ -785,6 +788,6 @@ impl<AS: AutoStatusMode> Drop for Motor<AS> {
     ///
     /// See also [here][`Drop`]
     fn drop(&mut self) {
-        self.driver.as_ref().drop_motor(&self.address)
+        self.driver.borrow_mut().drop_motor(&self.address)
     }
 }

@@ -4,7 +4,7 @@ use super::{
     super::{DriverError, InnerDriver},
     ResponseError, ResponseHandle,
 };
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 
 //
 
@@ -13,7 +13,7 @@ pub(in super::super) struct ReadResponseHandle<T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
-    driver: Arc<InnerDriver>,
+    driver: Rc<RefCell<InnerDriver>>,
     address: u8,
     // should parse the payload of the message (command without #<address> and \r)
     // and return a T from it
@@ -29,7 +29,7 @@ impl<T, P> ReadResponseHandle<T, P>
 where
     P: Fn(&[u8]) -> Result<T, DriverError>,
 {
-    pub fn new(driver: Arc<InnerDriver>, address: u8, parser: P) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: u8, parser: P) -> Self {
         Self {
             driver,
             address,
@@ -48,7 +48,7 @@ where
     // the whole match error and drop shenannigans are needed to statisfy the
     // borrow checker
     fn wait(self) -> Result<T, ResponseError<Self, T, DriverError>> {
-        let driver = &self.driver;
+        let mut driver = self.driver.borrow_mut();
         let payload = match driver.receive_single(self.address) {
             Ok(p) => p,
             Err(e) => {
@@ -70,12 +70,12 @@ where
 
 #[derive(Debug)]
 pub(in super::super) struct StatusResponseHandle {
-    driver: Arc<InnerDriver>,
+    driver: Rc<RefCell<InnerDriver>>,
     address: u8,
 }
 
 impl StatusResponseHandle {
-    pub fn new(driver: Arc<InnerDriver>, address: u8) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: u8) -> Self {
         Self { driver, address }
     }
 }
@@ -84,7 +84,7 @@ impl ResponseHandle for StatusResponseHandle {
     type Ret = MotorStatus;
 
     fn wait(self) -> Result<MotorStatus, ResponseError<Self, MotorStatus, DriverError>> {
-        let driver = &self.driver;
+        let mut driver = self.driver.borrow_mut();
         match driver.receive_status(self.address) {
             Ok(s) => Ok(s),
             Err(e) => {
