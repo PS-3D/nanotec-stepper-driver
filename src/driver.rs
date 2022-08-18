@@ -556,7 +556,7 @@ impl Driver {
     /// commands, meaning mostly setters and things like starting a motor.
     ///
     /// A motor is removed from the driver simply by dropping it. See also
-    /// [`Motor::drop`].
+    /// [`AllMotor::drop`].
     ///
     /// # Errors
     /// If the all-motor already exists in this driver, [`DriverError::AlreadyExists`]

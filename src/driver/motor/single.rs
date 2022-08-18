@@ -183,8 +183,7 @@ macro_rules! long_read {
     }};
 }
 
-// TODO adjust docs for allmotor
-/// Controls a single motor or all motors at once
+/// Controls a single motor
 ///
 /// This struct actually communicates with the motor. Basically all commands that
 /// can be found in the manual are mapped to methods in this struct. Usually a
@@ -205,23 +204,28 @@ macro_rules! long_read {
 /// In this case the motor doesn't respond to commands. Be aware though that
 /// getters will panic. See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
 ///
+/// ## AutoStatusMode
+/// The generic `AS` denotes whether or not the motor automatically sends its
+/// status after moving. It's implemented as a marker struct so that there
+/// can be different `start_motor` implementations with different returntypes,
+/// because if automatic status sending is enabled, we need to receive that as well.
+/// See also [`Motor<NoSendAutoStatus>::start_motor`], [`Motor<SendAutoStatus>::start_motor`],
+/// [`start_sending_auto_status`][Motor::start_sending_auto_status],
+/// [`stop_sending_auto_status`][Motor::stop_sending_auto_status]
+/// [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
+///
 /// # Errors
 /// If a value doesn't match the specifications of the corresponding command
 /// in the manual, [`DriverError::InvalidArgument`] is returned. If the given motor
 /// was already waiting for a response, [`DriverError::NotAvailable`] is returned.
-/// A [`DriverError::NotAvailable`] is also returned if a command is sent to all
-/// motors while some are still waiting for a response. Or if a command is sent
-/// to a single motors while not all motors have responded to a command for all
-/// motors yet, since it isn't possible to distinguish the responses from single
-/// motors in that case.
+/// Or if a command is sent to a single motors while not all motors have responded
+/// to a command for all motors yet, since it isn't possible to distinguish the
+/// responses from single motors in that case.
 /// A [`DriverError::IoError`] is also possible, if there was an error sending the
 /// command.
 ///
 /// # Panics
-/// If this is the all-motor, i.e. the motor used to send commands to all motors,
-/// and a getter is called, the getter panics since it isn't possible to distinguish
-/// the answers from the motors.\
-/// Also panics if a getter is called and the [`RespondMode`] is
+/// Panics if a getter is called and the [`RespondMode`] is
 /// [`RespondMode::NotQuiet`] since it's impossible to get a value when there won't
 /// be a response
 /// (see also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)).
@@ -245,7 +249,7 @@ macro_rules! long_read {
 ///
 /// let steps = m1.get_travel_distance().unwrap().wait().unwrap();
 /// let max_freq = m1.get_max_frequency().unwrap().wait().unwrap();
-/// println!("Drove {} steps with a top speed of {} steps/min", steps, max_freq);
+/// println!("Driving {} steps with a top speed of {} steps/min", steps, max_freq);
 ///
 /// let record = m1.get_current_record().unwrap().wait().unwrap();
 /// println!("Current record: {:?}", record);
@@ -665,9 +669,6 @@ impl Motor<NoSendAutoStatus> {
     /// able to wait on the motor status, making it possble to know when the motor
     /// finished.
     ///
-    /// # Panics
-    /// If the current motor is the [`AllMotor`]
-    ///
     /// # Errors
     /// If the command fails for any reason, a [`MotorMappingError`] is returned.
     /// It contains the actual [`DriverError`] and the original motor, making
@@ -703,6 +704,23 @@ impl Motor<NoSendAutoStatus> {
     ///
     /// This function is only used when [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
     /// isn't enabled. See also [`start_sending_auto_status`][Motor::start_sending_auto_status]
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
+    /// use std::time::Duration;
+    /// use serialport;
+    ///
+    /// let s = serialport::new("/dev/ttyUSB0", 115200)
+    ///     .timeout(Duration::from_secs(1))
+    ///     .open()
+    ///     .unwrap();
+    /// let mut driver = Driver::new(s).unwrap();
+    /// let mut m = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
+    ///
+    /// let handle = m.start_motor().unwrap().wait().unwrap();
+    /// println!("started motor");
+    /// ```
     pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<Ret = ()>> {
         self.short_write(map::START_MOTOR, "")
     }
@@ -715,9 +733,6 @@ impl Motor<SendAutoStatus> {
     /// returns a motor with type `Motor<I, NoSendAutoStatus>`. There, the
     /// return-type of [`start_motor`][Motor::start_motor] is adjusted to not
     /// return anything.
-    ///
-    /// # Panics
-    /// If the current motor is the [`AllMotor`]
     ///
     /// # Errors
     /// If the command fails for any reason, a [`MotorMappingError`] is returned.
