@@ -4,6 +4,7 @@ use nanotec_stepper_driver::{
 };
 use nanotec_stepper_driver_test::Interface;
 use std::{
+    collections::BTreeMap,
     thread,
     time::{Duration, Instant},
 };
@@ -160,7 +161,16 @@ fn all() {
 
     interface.add_cmd_echo(b"#*A\r");
     interface.add_read(b"*A\r");
-    all.start_motor().unwrap().wait().unwrap();
+    let status: BTreeMap<u8, MotorStatus> = all
+        .start_motor()
+        .unwrap()
+        .wait()
+        .unwrap()
+        .into_iter()
+        .map(|(a, h)| (a, h.wait().unwrap()))
+        .collect();
+
+    assert!(status.is_empty());
     assert!(interface.is_empty());
 }
 
@@ -209,7 +219,16 @@ fn quiet() {
 
     interface.add_cmd_echo(b"#*A\r");
     interface.add_read(b"*A\r");
-    all.start_motor().unwrap().wait().unwrap();
+    let status: BTreeMap<u8, MotorStatus> = all
+        .start_motor()
+        .unwrap()
+        .wait()
+        .unwrap()
+        .into_iter()
+        .map(|(a, h)| (a, h.wait().unwrap()))
+        .collect();
+
+    assert!(status.is_empty());
     assert!(interface.is_empty());
 }
 
