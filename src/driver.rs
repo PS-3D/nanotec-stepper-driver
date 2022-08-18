@@ -31,6 +31,8 @@ use std::{
 };
 use thiserror::Error;
 
+type Map<K, V> = HashMap<K, V>;
+
 // TODO implement logging
 
 // unfortunately, due to rustfmt not having the blank_lines_upper_bound feature
@@ -118,7 +120,7 @@ struct InnerDriverData {
     // count in send_all
     all: Option<(u8, Vec<u8>)>,
     all_exists: bool,
-    motors: HashMap<u8, InnerMotor>,
+    motors: Map<u8, InnerMotor>,
 }
 
 impl InnerDriverData {
