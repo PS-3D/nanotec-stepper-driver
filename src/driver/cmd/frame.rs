@@ -14,6 +14,10 @@ use std::{
 
 //
 
+/// Holds the address of a motor
+///
+/// Used to disscern whether something is addressed to a specific motor or to all
+/// motors.
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum MotorAddress {
     All,
