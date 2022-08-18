@@ -15,7 +15,10 @@ use self::{
         payload::{self, MotorStatus, RespondMode},
     },
     estop::EStop,
-    motor::{AllMotor, Motor, NoSendAutoStatus},
+    motor::{
+        all::AllMotor,
+        single::{Motor, NoSendAutoStatus},
+    },
     parse::ParseError,
 };
 use crate::util::ensure;
@@ -586,6 +589,7 @@ impl Driver {
             DriverError::InvalidAddress(address)
         );
         let inner = &self.inner;
+        // FIXME move to innermotor
         let mut data = inner.data.lock().unwrap();
         // Have to do it this way due to try_insert being nightly
         ensure!(
@@ -604,10 +608,7 @@ impl Driver {
                     queue: VecDeque::with_capacity(4),
                 },
             );
-        Ok(Motor::new(
-            Arc::clone(&self.inner),
-            MotorAddress::Single(address),
-        ))
+        Ok(Motor::new(Arc::clone(&self.inner), address))
     }
 
     /// Returns a motor that represents all motors, the so-called all-motor.
@@ -635,15 +636,16 @@ impl Driver {
     /// let mut driver = Driver::new(s).unwrap();
     /// let mut m1 = driver.add_all_motor().unwrap();
     /// ```
-    pub fn add_all_motor(&mut self) -> Result<AllMotor<NoSendAutoStatus>, DriverError> {
+    pub fn add_all_motor(&mut self) -> Result<AllMotor, DriverError> {
         let inner = &self.inner;
+        // FIXME move to InnerMotor
         let mut data = inner.data.lock().unwrap();
         ensure!(
             !data.all_exists,
             DriverError::AlreadyExists(MotorAddress::All)
         );
         data.all_exists = true;
-        Ok(Motor::new(Arc::clone(&self.inner), MotorAddress::All))
+        Ok(AllMotor::new(Arc::clone(&self.inner)))
     }
 
     /// Returns a new [`EStop`]

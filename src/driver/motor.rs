@@ -1,1167 +1,384 @@
-use super::{
-    cmd::{
-        frame::MotorAddress,
-        payload::{
-            BaudRate, DigitalInputFunction, DigitalOutputFunction, ErrorCorrectionMode,
-            FirmwareVersion, LimitSwitchBehavior, MotorError, MotorStatus, MotorStop, MotorType,
-            PositioningMode, RampType, Record, Repetitions, RespondMode, RotationDirection,
-            StepMode,
-        },
-    },
-    map,
-    parse::{parse_su16, parse_su32, parse_su64, parse_su8, ParseError},
-    responsehandle::{
-        map::ResponseHandleMap,
-        read::{ReadResponseHandle, StatusResponseHandle},
-        write::{
-            DummyResponseHandle, MotorMappingError, MotorMappingResponseHandle,
-            WrapperResponseHandle, WriteResponseHandle,
-        },
-        ResponseHandle,
-    },
-    DriverError, InnerDriver,
-};
-use crate::util::ensure;
-use chrono::{DateTime, Duration, Local};
-use nom::{
-    bytes::complete::tag,
-    character::complete::{i32 as parse_i32, i64 as parse_i64},
-    sequence::{preceded, tuple},
-    Finish, Parser,
-};
-use std::{fmt::Debug, io::Write, marker::PhantomData, mem, sync::Arc};
+pub mod all;
+pub mod single;
+
+use super::DriverError;
+
+//
 
 type DResult<T> = Result<T, DriverError>;
-/// temporary alias, should be changed in the future
-pub type AllMotor<AS> = Motor<AS>;
 
 //
 
-/// Serves to allow 2 different implementations some functions
-///
-/// Makes it possible to allow different implementations for all funcitons that
-/// are affected by the automatic status sending (see also [`SendAutoStatus`],
-/// [`NoSendAutoStatus`] and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
-pub trait AutoStatusMode {}
+macro_rules! motor_common_functions {
+    ($write:expr) => {
+        fn short_write<D: Display>(
+            &self,
+            mnemonic: &str,
+            data: D,
+        ) -> Result<WrapperResponseHandle, DriverError> {
+            $write(self, format_args!("{}{}", mnemonic, data))
+        }
 
-/// Serves to allow 2 different implementations some functions
-///
-/// Makes it possible to allow different implementations for all funcitons that
-/// are affected by the automatic status sending (see also [`NoSendAutoStatus`]
-/// and [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
-#[derive(Debug)]
-pub struct SendAutoStatus();
+        fn long_write<D: Display>(
+            &self,
+            mnemonic: &str,
+            data: D,
+        ) -> Result<WrapperResponseHandle, DriverError> {
+            $write(self, format_args!("{}={}", mnemonic, data))
+        }
 
-impl AutoStatusMode for SendAutoStatus {}
+        pub fn set_motor_type(&mut self, t: MotorType) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::MOTOR_TYPE, t)
+        }
 
-/// Serves to allow 2 different implementations some functions
-///
-/// Makes it possible to allow different implementations for all funcitons that
-/// are affected by the automatic status sending (see also [`SendAutoStatus`] and
-/// [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf))
-#[derive(Debug)]
-pub struct NoSendAutoStatus();
+        pub fn set_phase_current(&mut self, c: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(c <= 150, DriverError::InvalidArgument);
+            self.short_write(map::PHASE_CURRENT, c)
+        }
 
-impl AutoStatusMode for NoSendAutoStatus {}
+        pub fn set_standstill_phase_current(
+            &mut self,
+            c: u8,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(c <= 150, DriverError::InvalidArgument);
+            self.short_write(map::STANDSTILL_PHASE_CURRENT, c)
+        }
 
-//
+        pub fn set_bldc_peak_current(&mut self, c: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(c <= 150, DriverError::InvalidArgument);
+            self.long_write(map::BLDC_PEAK_CURRENT, c)
+        }
 
-// sends read command to motor
-// in theory a read command isn't diffrent than a write command, the
-// difference is in the returned responsehandle.
-//
-// self is the Motor the macro was called in.
-// parser is a parser (nom::Parser) that recognises the the response of the sent
-// command and extracts a value.
-// args are the format_arguments for the payload to send.
-//
-// panics if this motor is the all motor i.e. if self.addres == None
-// panics if the respondmode is NotQuiet
-//
-// an invocation of this macro could look like this:
-// read!(self, preceded(tag("Zs"), parse_i32), format_args!("Zs"))
-//
-// usually it is invoked by the short_read or long_read macros though
-macro_rules! read {
-    ($self:expr, $parser:expr, $args:expr) => {{
-        // a read command to all motors would be stupid, you wouldn't be
-        // able to distinguish the answers
-        let address = $self
-            .address
-            .single_expect("Can't send a read command to all motors");
-        let driver = &$self.driver;
-        assert_eq!(driver.get_respond_mode(address), RespondMode::NotQuiet);
-        // send command
-        driver.send_single_with_response(address, $args)?;
-        Ok(ReadResponseHandle::new(
-            Arc::clone(&$self.driver),
-            address,
-            // parsing closure
-            move |input| {
-                let (remainder, t) =
-                    $parser
-                        .parse(input)
-                        .finish()
-                        .map_err(|_: ParseError<&[u8]>| {
-                            DriverError::NonMatchingPayloads(input.to_vec())
-                        })?;
-                if !remainder.is_empty() {
-                    Err(DriverError::NonMatchingPayloads(input.to_vec()))
-                } else {
-                    Ok(t)
-                }
-            },
-        ))
-    }};
-}
+        pub fn set_bldc_current_time_constant(
+            &mut self,
+            t: u16,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::BLDC_CURRENT_TIME_CONSTANT, t)
+        }
 
-// sends short read command to the motor
-// in theory a read command isn't diffrent than a write command, the
-// difference is in the returned responsehandle.
-// This macro is only for read commands which have the form "Z<mnemonic>"
-// and return a payload of the form "Z<mnemonic><value>". Commands of any other
-// form should use read directly
-//
-// self is the Motor the macro was called in.
-// mnemonic is the symbol(s) of the command, e.g. s
-// parser is a parser (nom::Parser) that recognises the the response of the sent
-// command and extracts a value.
-//
-// an invocation of this macro could look like this:
-// short_read!(self, "s", parse_i32)
-macro_rules! short_read {
-    ($self:expr, $mnemonic:expr, $parser:expr) => {
-        read!(
-            $self,
-            nom::sequence::preceded(
-                nom::sequence::preceded(
-                    nom::bytes::complete::tag(map::READ),
-                    nom::bytes::complete::tag($mnemonic)
-                ),
-                $parser
-            ),
-            format_args!("Z{}", $mnemonic)
-        )
-    };
-}
+        pub fn set_step_mode(&mut self, m: StepMode) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::STEP_MODE, m)
+        }
 
-// sends long read command to the motor
-// in theory a read command isn't diffrent than a write command, the
-// difference is in the returned responsehandle.
-// This macro is only for read commands which have the form "<mnemonic>"
-// and return a payload of the form "<mnemonic><value>". Commands of any other
-// form should use read directly
-//
-// self is the Motor the macro was called in.
-// mnemonic is the symbol(s) of the command, e.g. s
-// parser is a parser (nom::Parser) that recognises the the response of the sent
-// command and extracts a value.
-//
-// an invocation of this macro could look like this:
-// long_read!(self, ":CL_motor_type", MotorType::parse)
-macro_rules! long_read {
-    ($self:expr, $mnemonic:expr, $parser:expr) => {
-        read!(
-            $self,
-            nom::sequence::preceded(nom::bytes::complete::tag($mnemonic), $parser),
-            format_args!("{}", $mnemonic)
-        )
-    };
-}
+        pub fn set_drive_address(&mut self, a: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(a >= 1 && a <= 254, DriverError::InvalidArgument);
+            self.short_write(map::DRIVE_ADDRESS, a)
+        }
 
-// sends write command to motor
-// in theory a read command isn't diffrent than a write command, the
-// difference is in the returned responsehandle.
-//
-// self is the Motor the macro was called in.
-// args are the format_arguments for the payload to send.
-//
-// an invocation of this macro could look like this:
-// write!(self, format_args!("A"))
-//
-// usually it is invoked by the short_write or long_write macros though
-macro_rules! write {
-    ($self:expr, $args:expr) => {{
-        let rm = match $self.address {
-            MotorAddress::Single(a) => {
-                let driver = &$self.driver;
-                let rm = driver.get_respond_mode(a);
-                if rm == RespondMode::NotQuiet {
-                    driver.send_single_with_response(a, $args)?;
-                } else {
-                    driver.send_single_no_response(a, $args)?;
-                }
-                rm
+        pub fn set_motor_id(&mut self, id: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(id <= 2147483647, DriverError::InvalidArgument);
+            self.long_write(map::MOTOR_ID, id)
+        }
+
+        pub fn set_limit_switch_behavior(
+            &mut self,
+            l: LimitSwitchBehavior,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::LIMIT_SWITCH_BEHAVIOR, l)
+        }
+
+        pub fn set_error_correction_mode(
+            &mut self,
+            m: ErrorCorrectionMode,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::ERROR_CORRECTION_MODE, m)
+        }
+
+        pub fn set_auto_correction_record(
+            &mut self,
+            r: u8,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(r <= 32, DriverError::InvalidArgument);
+            self.short_write(map::AUTO_CORRECTION_RECORD, r)
+        }
+
+        // TODO encoder direction
+
+        pub fn set_swing_out_time(&mut self, st: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(st <= 250, DriverError::InvalidArgument);
+            self.short_write(map::SWING_OUT_TIME, st)
+        }
+
+        pub fn set_max_encoder_deviation(
+            &mut self,
+            d: u8,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(d <= 250, DriverError::InvalidArgument);
+            self.short_write(map::MAX_ENCODER_DEVIATION, d)
+        }
+
+        pub fn set_feedrate_numerator(&mut self, n: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n <= 2147483647, DriverError::InvalidArgument);
+            self.long_write(map::FEED_RATE_NUMERATOR, n)
+        }
+
+        pub fn set_feedrate_denominator(
+            &mut self,
+            d: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(d <= 2147483647, DriverError::InvalidArgument);
+            self.long_write(map::FEED_RATE_DENOMINATOR, d)
+        }
+
+        pub fn reset_position_error(&mut self, p: i32) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(
+                p >= -100_000_000 && p <= 100_000_000,
+                DriverError::InvalidArgument
+            );
+            self.short_write(map::RESET_POS_ERR, p)
+        }
+
+        pub fn set_digital_input_function(
+            &mut self,
+            i: u8,
+            f: DigitalInputFunction,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(i <= 8 && i >= 1, DriverError::InvalidArgument);
+            let mut name = map::DIGITAL_INPUT_FUNCTION_PARTIAL.to_string();
+            name.push(char::from_u32(60 + (i as u32)).unwrap());
+            self.long_write(name.as_str(), f)
+        }
+
+        pub fn set_digital_output_function(
+            &mut self,
+            o: u8,
+            f: DigitalOutputFunction,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(o <= 8 && o >= 1, DriverError::InvalidArgument);
+            let mut name = map::DIGITAL_OUTPUT_FUNCTION_PARTIAL.to_string();
+            name.push(char::from_u32(60 + (o as u32)).unwrap());
+            self.long_write(name.as_str(), f)
+        }
+
+        // Not implementing Masking and demasking inputs since it is deprecated
+
+        pub fn set_reverse_in_out_polarity(
+            &mut self,
+            b: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(b & 0x1ff00ff == b, DriverError::InvalidArgument);
+            self.short_write(map::REVERSE_IN_OUT_POLARITY, b)
+        }
+
+        pub fn set_input_debounce_time(&mut self, t: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(t <= 250, DriverError::InvalidArgument);
+            self.short_write(map::INPUT_DEBOUNCE_TIME, t)
+        }
+
+        // TODO set outputs
+
+        pub fn reset_eeprom(&mut self) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::RESET_EEPROM, "")
+        }
+
+        // TODO start bootloader
+
+        pub fn set_reverse_clearance(&mut self, c: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(c <= 9999, DriverError::InvalidArgument);
+            self.short_write(map::REVERSE_CLEARANCE, c)
+        }
+
+        pub fn set_ramp_type(&mut self, t: RampType) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::RAMP_TYPE, t)
+        }
+
+        pub fn set_brake_voltage_off_wait_time(
+            &mut self,
+            t: u16,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::WAIT_TIME_BRAKE_VOLTAGE_OFF, t)
+        }
+
+        pub fn set_motor_movement_wait_time(
+            &mut self,
+            t: u16,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::WAIT_TIME_MOTOR_MOVE, t)
+        }
+
+        pub fn set_motor_current_off_wait_time(
+            &mut self,
+            t: u16,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::WAIT_TIME_MOTOR_CURRENT_OFF, t)
+        }
+
+        pub fn set_baud_rate(&mut self, br: BaudRate) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::BAUD_RATE, br)
+        }
+
+        // TODO set crc checksum
+        // TODO set hall config
+
+        pub fn set_quickstop_ramp(&mut self, s: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(s <= 8000, DriverError::InvalidArgument);
+            self.short_write(map::QUICKSTOP_RAMP, s)
+        }
+
+        pub fn set_quickstop_ramp_no_conversion(
+            &mut self,
+            r: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(r <= 3_000_000, DriverError::InvalidArgument);
+            self.long_write(map::QUICKSTOP_RAMP_NO_CONVERSION, r)
+        }
+
+        pub fn set_gearfactor_numerator(
+            &mut self,
+            n: u8,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::GEAR_FACTOR_NUMERATOR, n)
+        }
+
+        pub fn set_gearfactor_denominator(
+            &mut self,
+            d: u8,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.long_write(map::GEAR_FACTOR_DENOMINATOR, d)
+        }
+
+        pub fn stop_motor(&mut self, stop: MotorStop) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::STOP_MOTOR, stop)
+        }
+
+        pub fn load_record(&mut self, n: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n >= 1 && n <= 32, DriverError::InvalidArgument);
+            self.short_write(map::LOAD_RECORD, n)
+        }
+
+        pub fn save_record(&mut self, n: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n >= 1 && n <= 32, DriverError::InvalidArgument);
+            self.short_write(map::SAVE_RECORD, n)
+        }
+
+        pub fn set_positioning_mode(
+            &mut self,
+            mode: PositioningMode,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::POSITIONING_MODE, mode)
+        }
+
+        pub fn set_travel_distance(
+            &mut self,
+            distance: i32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(
+                distance >= -100_000_000 && distance <= 100_000_000,
+                DriverError::InvalidArgument
+            );
+            self.short_write(map::TRAVEL_DISTANCE, distance)
+        }
+
+        pub fn set_min_frequency(
+            &mut self,
+            frequency: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(
+                frequency >= 1 && frequency <= 160_000,
+                DriverError::InvalidArgument
+            );
+            self.short_write(map::MIN_FREQUENCY, frequency)
+        }
+
+        pub fn set_max_frequency(
+            &mut self,
+            frequency: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(
+                frequency >= 1 && frequency <= 1_000_000,
+                DriverError::InvalidArgument
+            );
+            self.short_write(map::MAX_FREQUENCY, frequency)
+        }
+
+        pub fn set_max_frequency2(
+            &mut self,
+            frequency: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(
+                frequency >= 1 && frequency <= 1_000_000,
+                DriverError::InvalidArgument
+            );
+            self.short_write(map::MAX_FREQUENCY2, frequency)
+        }
+
+        pub fn set_accel_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n >= 1, DriverError::InvalidArgument);
+            self.short_write(map::ACCEL_RAMP, n)
+        }
+
+        pub fn set_accel_ramp_no_conversion(
+            &mut self,
+            n: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n >= 1 && n <= 3_000_000, DriverError::InvalidArgument);
+            self.long_write(map::ACCEL_RAMP_NO_CONVERSION, n)
+        }
+
+        pub fn set_brake_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::BRAKE_RAMP, n)
+        }
+
+        pub fn set_brake_ramp_no_conversion(
+            &mut self,
+            n: u32,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n <= 3_000_000, DriverError::InvalidArgument);
+            self.long_write(map::BRAKE_RAMP_NO_CONVERSION, n)
+        }
+
+        pub fn set_rotation_direction(
+            &mut self,
+            direction: RotationDirection,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::ROTATION_DIRECTION, direction)
+        }
+
+        pub fn set_rotation_direction_change(
+            &mut self,
+            change: bool,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::ROTATION_DIRECTION_CHANGE, change as u8)
+        }
+
+        pub fn set_repetitions(
+            &mut self,
+            n: Repetitions,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            if let Repetitions::N(r) = n {
+                ensure!(r <= 254, DriverError::InvalidArgument);
             }
-            MotorAddress::All => $self.driver.send_all($args)?,
-        };
-        if rm == RespondMode::NotQuiet {
-            // unfortunately there isn't a better way rn.
-            // value chosen sorta random, 64 bytes should be enough for nearly all
-            // commands tho
-            let mut sent = Vec::with_capacity(64);
-            sent.write_fmt($args)?;
-            Ok(WrapperResponseHandle::Write(WriteResponseHandle::new(
-                Arc::clone(&$self.driver),
-                $self.address,
-                sent,
-            )))
-        } else {
-            Ok(WrapperResponseHandle::Dummy(DummyResponseHandle::new()))
+            self.short_write(map::REPETITIONS, n)
         }
-    }};
-}
 
-// sends short write command to motor
-// in theory a read command isn't diffrent than a write command, the
-// difference is in the returned responsehandle.
-//
-// self is the Motor the macro was called in.
-// mnemonic is the symbol of the command, e.g. "S"
-// data is the data which should be written
-//
-// an invocation of this macro could look like this:
-// short_write!(self, "S", MotorStop::QuickStop)
-macro_rules! short_write {
-    ($self:expr, $mnemonic:expr, $data:expr) => {
-        write!($self, format_args!("{}{}", $mnemonic, $data))
-    };
-}
-
-// sends long write command to motor
-// in theory a read command isn't diffrent than a write command, the
-// difference is in the returned responsehandle.
-//
-// self is the Motor the macro was called in.
-// mnemonic is the symbol of the command, e.g. ":CL_motor_type"
-// data is the data which should be written
-//
-// an invocation of this macro could look like this:
-// long_write!(self, ":CL_motor_type", MotorType::Stepper)
-macro_rules! long_write {
-    ($self:expr, $mnemonic:expr, $data:expr) => {
-        write!($self, format_args!("{}={}", $mnemonic, $data))
-    };
-}
-
-/// Controls a single motor or all motors at once
-///
-/// This struct actually communicates with the motor. Basically all commands that
-/// can be found in the manual are mapped to methods in this struct. Usually a
-/// command is split into a getter and a setter. Only some like reading the current
-/// record are split even more. Nearly all methods block until the command got
-/// sent.
-///
-/// The methods usually don't return values directly. Instead they return a
-/// [`ResponseHandle`], on which [`ResponseHandle::wait`] can be called to then
-/// wait for the response of the motor and, depending on the command, obtain a
-/// value. Only the handles of getters actually return a value, the others only
-/// wait for the response and check it was correct. This approach was chosen so
-/// commands can be sent to different motors before having to wait for the
-/// responses. This reduces waittimes.
-///
-/// To send commands to a motor in quick succession, the [`RespondMode`] can
-/// be set to [`Quiet`][RespondMode::Quiet] with [`set_respond_mode`][Motor::set_respond_mode].
-/// In this case the motor doesn't respond to commands. Be aware though that
-/// getters will panic. See also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
-///
-/// # Errors
-/// If a value doesn't match the specifications of the corresponding command
-/// in the manual, [`DriverError::InvalidArgument`] is returned. If the given motor
-/// was already waiting for a response, [`DriverError::NotAvailable`] is returned.
-/// A [`DriverError::NotAvailable`] is also returned if a command is sent to all
-/// motors while some are still waiting for a response. Or if a command is sent
-/// to a single motors while not all motors have responded to a command for all
-/// motors yet, since it isn't possible to distinguish the responses from single
-/// motors in that case.
-/// A [`DriverError::IoError`] is also possible, if there was an error sending the
-/// command.
-///
-/// # Panics
-/// If this is the all-motor, i.e. the motor used to send commands to all motors,
-/// and a getter is called, the getter panics since it isn't possible to distinguish
-/// the answers from the motors.\
-/// Also panics if a getter is called and the [`RespondMode`] is
-/// [`RespondMode::NotQuiet`] since it's impossible to get a value when there won't
-/// be a response
-/// (see also [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)).
-///
-/// # Examples
-/// ```no_run
-/// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
-/// use std::time::Duration;
-/// use serialport;
-///
-/// let s = serialport::new("/dev/ttyUSB0", 115200)
-///     .timeout(Duration::from_secs(1))
-///     .open()
-///     .unwrap();
-/// let mut driver = Driver::new(s).unwrap();
-/// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
-///
-/// m1.load_record(3).unwrap().wait().unwrap();
-/// m1.set_continuation_record(None).unwrap().wait().unwrap();
-/// m1.start_motor().unwrap().wait().unwrap();
-///
-/// let steps = m1.get_travel_distance().unwrap().wait().unwrap();
-/// let max_freq = m1.get_max_frequency().unwrap().wait().unwrap();
-/// println!("Drove {} steps with a top speed of {} steps/min", steps, max_freq);
-///
-/// let record = m1.get_current_record().unwrap().wait().unwrap();
-/// println!("Current record: {:?}", record);
-/// ```
-/// Or sending multiple commands more or less at the same time:
-/// ```no_run
-/// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
-/// use std::time::Duration;
-/// use serialport;
-///
-/// let s = serialport::new("/dev/ttyUSB0", 115200)
-///     .timeout(Duration::from_secs(1))
-///     .open()
-///     .unwrap();
-/// let mut driver = Driver::new(s).unwrap();
-/// let mut m1 = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
-/// let mut m2 = driver.add_motor(2, RespondMode::NotQuiet).unwrap();
-///
-/// let handle1 = m1.start_motor().unwrap();
-/// let handle2 = m2.start_motor().unwrap();
-/// println!("started motors");
-/// handle1.wait().unwrap();
-/// handle2.wait().unwrap();
-/// ```
-#[derive(Debug)]
-// needed for transmutation
-// unfortunately there's no better way
-#[repr(C)]
-pub struct Motor<AS: AutoStatusMode> {
-    driver: Arc<InnerDriver>,
-    address: MotorAddress,
-    marker_as: PhantomData<AS>,
-}
-
-// DResult<impl ResponseHandle<Ret = T>> is not an alias since aliases with
-// impl aren't supported yet
-impl<AS: AutoStatusMode> Motor<AS> {
-    pub fn get_motor_type(&mut self) -> DResult<impl ResponseHandle<Ret = MotorType>> {
-        long_read!(self, map::MOTOR_TYPE, MotorType::parse)
-    }
-
-    pub fn set_motor_type(&mut self, t: MotorType) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::MOTOR_TYPE, t)
-    }
-
-    pub fn get_phase_current(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::PHASE_CURRENT, parse_su8)
-    }
-
-    pub fn set_phase_current(&mut self, c: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(c <= 150, DriverError::InvalidArgument);
-        short_write!(self, map::PHASE_CURRENT, c)
-    }
-
-    pub fn get_standstill_phase_current(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::STANDSTILL_PHASE_CURRENT, parse_su8)
-    }
-
-    pub fn set_standstill_phase_current(
-        &mut self,
-        c: u8,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(c <= 150, DriverError::InvalidArgument);
-        short_write!(self, map::STANDSTILL_PHASE_CURRENT, c)
-    }
-
-    pub fn get_bldc_peak_current(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        long_read!(self, map::BLDC_PEAK_CURRENT, parse_su8)
-    }
-
-    pub fn set_bldc_peak_current(&mut self, c: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(c <= 150, DriverError::InvalidArgument);
-        long_write!(self, map::BLDC_PEAK_CURRENT, c)
-    }
-
-    pub fn get_bldc_current_time_constant(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        long_read!(self, map::BLDC_CURRENT_TIME_CONSTANT, parse_su16)
-    }
-
-    pub fn set_bldc_current_time_constant(
-        &mut self,
-        t: u16,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::BLDC_CURRENT_TIME_CONSTANT, t)
-    }
-
-    pub fn get_step_mode(&mut self) -> DResult<impl ResponseHandle<Ret = StepMode>> {
-        short_read!(self, map::STEP_MODE, StepMode::parse)
-    }
-
-    pub fn set_step_mode(&mut self, m: StepMode) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::STEP_MODE, m)
-    }
-
-    pub fn get_drive_address(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::DRIVE_ADDRESS, parse_su8)
-    }
-
-    pub fn set_drive_address(&mut self, a: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(a >= 1 && a <= 254, DriverError::InvalidArgument);
-        short_write!(self, map::DRIVE_ADDRESS, a)
-    }
-
-    pub fn get_motor_id(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        long_read!(self, map::MOTOR_ID, parse_su32)
-    }
-
-    pub fn set_motor_id(&mut self, id: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(id <= 2147483647, DriverError::InvalidArgument);
-        long_write!(self, map::MOTOR_ID, id)
-    }
-
-    pub fn get_limit_switch_behavior(
-        &mut self,
-    ) -> DResult<impl ResponseHandle<Ret = LimitSwitchBehavior>> {
-        short_read!(self, map::LIMIT_SWITCH_BEHAVIOR, LimitSwitchBehavior::parse)
-    }
-
-    pub fn set_limit_switch_behavior(
-        &mut self,
-        l: LimitSwitchBehavior,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::LIMIT_SWITCH_BEHAVIOR, l)
-    }
-
-    pub fn get_error_correction_mode(
-        &mut self,
-    ) -> DResult<impl ResponseHandle<Ret = ErrorCorrectionMode>> {
-        short_read!(self, map::ERROR_CORRECTION_MODE, ErrorCorrectionMode::parse)
-    }
-
-    pub fn set_error_correction_mode(
-        &mut self,
-        m: ErrorCorrectionMode,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::ERROR_CORRECTION_MODE, m)
-    }
-
-    pub fn get_auto_correction_record(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::AUTO_CORRECTION_RECORD, parse_su8)
-    }
-
-    pub fn set_auto_correction_record(&mut self, r: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(r <= 32, DriverError::InvalidArgument);
-        short_write!(self, map::AUTO_CORRECTION_RECORD, r)
-    }
-
-    // TODO encoder direction
-
-    pub fn get_swing_out_time(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::SWING_OUT_TIME, parse_su8)
-    }
-
-    pub fn set_swing_out_time(&mut self, st: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(st <= 250, DriverError::InvalidArgument);
-        short_write!(self, map::SWING_OUT_TIME, st)
-    }
-
-    pub fn get_max_encoder_deviation(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::MAX_ENCODER_DEVIATION, parse_su8)
-    }
-
-    pub fn set_max_encoder_deviation(&mut self, d: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(d <= 250, DriverError::InvalidArgument);
-        short_write!(self, map::MAX_ENCODER_DEVIATION, d)
-    }
-
-    pub fn get_feedrate_numerator(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        long_read!(self, map::FEED_RATE_NUMERATOR, parse_su32)
-    }
-
-    pub fn set_feedrate_numerator(&mut self, n: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n <= 2147483647, DriverError::InvalidArgument);
-        long_write!(self, map::FEED_RATE_NUMERATOR, n)
-    }
-
-    pub fn get_feedrate_denominator(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        long_read!(self, map::FEED_RATE_DENOMINATOR, parse_su32)
-    }
-
-    pub fn set_feedrate_denominator(&mut self, d: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(d <= 2147483647, DriverError::InvalidArgument);
-        long_write!(self, map::FEED_RATE_DENOMINATOR, d)
-    }
-
-    pub fn reset_position_error(&mut self, p: i32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(
-            p >= -100_000_000 && p <= 100_000_000,
-            DriverError::InvalidArgument
-        );
-        short_write!(self, map::RESET_POS_ERR, p)
-    }
-
-    pub fn get_error(&mut self, p: u8) -> DResult<impl ResponseHandle<Ret = MotorError>> {
-        ensure!(p <= 32, DriverError::InvalidArgument);
-        // FIXME concrete value instead of just u8
-        read!(
-            self,
-            preceded(
-                tuple((tag(map::READ), parse_su8, tag(map::READ_ERR_MEM))),
-                MotorError::parse
-            ),
-            format_args!("{}{}{}", map::READ, p, map::READ_ERR_MEM)
-        )
-    }
-
-    pub fn get_encoder_position(&mut self) -> DResult<impl ResponseHandle<Ret = i32>> {
-        short_read!(self, map::READ_ENCODER_POS, parse_i32)
-    }
-
-    pub fn get_position(&mut self) -> DResult<impl ResponseHandle<Ret = i32>> {
-        short_read!(self, map::READ_POS, parse_i32)
-    }
-
-    pub fn is_motor_referenced(&mut self) -> DResult<impl ResponseHandle<Ret = bool>> {
-        long_read!(self, map::IS_REFERENCED, parse_su8.map(|n| n == 1))
-    }
-
-    // TODO reading out status
-
-    pub fn get_firmware_version(&mut self) -> DResult<impl ResponseHandle<Ret = FirmwareVersion>> {
-        short_read!(self, map::READ_FIRMWARE_VERSION, FirmwareVersion::parse)
-    }
-
-    pub fn get_operating_time(&mut self) -> DResult<impl ResponseHandle<Ret = u64>> {
-        long_read!(self, map::READ_OPERATING_TIME, parse_su64)
-    }
-
-    /// This command is not in the manual. It just gives you the time the motor
-    /// operation started in the current time zone, similar to [`get_operating_time`][Motor::get_operating_time]
-    pub fn get_operation_start(&mut self) -> DResult<impl ResponseHandle<Ret = DateTime<Local>>> {
-        long_read!(
-            self,
-            map::READ_OPERATING_TIME,
-            parse_i64.map(|s| {
-                let now = Local::now();
-                now - Duration::seconds(s)
-            })
-        )
-    }
-
-    pub fn get_digital_input_function(
-        &mut self,
-        i: u8,
-    ) -> DResult<impl ResponseHandle<Ret = DigitalInputFunction>> {
-        ensure!(i <= 8 && i >= 1, DriverError::InvalidArgument);
-        let mut name = map::DIGITAL_INPUT_FUNCTION_PARTIAL.to_string();
-        name.push(char::from_u32(60 + (i as u32)).unwrap());
-        long_read!(self, name.as_str(), DigitalInputFunction::parse)
-    }
-
-    pub fn set_digital_input_function(
-        &mut self,
-        i: u8,
-        f: DigitalInputFunction,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(i <= 8 && i >= 1, DriverError::InvalidArgument);
-        let mut name = map::DIGITAL_INPUT_FUNCTION_PARTIAL.to_string();
-        name.push(char::from_u32(60 + (i as u32)).unwrap());
-        long_write!(self, name.as_str(), f)
-    }
-
-    pub fn get_digital_output_function(
-        &mut self,
-        o: u8,
-    ) -> DResult<impl ResponseHandle<Ret = DigitalOutputFunction>> {
-        ensure!(o <= 8 && o >= 1, DriverError::InvalidArgument);
-        let mut name = map::DIGITAL_OUTPUT_FUNCTION_PARTIAL.to_string();
-        name.push(char::from_u32(60 + (o as u32)).unwrap());
-        long_read!(self, name.as_str(), DigitalOutputFunction::parse)
-    }
-
-    pub fn set_digital_output_function(
-        &mut self,
-        o: u8,
-        f: DigitalOutputFunction,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(o <= 8 && o >= 1, DriverError::InvalidArgument);
-        let mut name = map::DIGITAL_OUTPUT_FUNCTION_PARTIAL.to_string();
-        name.push(char::from_u32(60 + (o as u32)).unwrap());
-        long_write!(self, name.as_str(), f)
-    }
-
-    // Not implementing Masking and demasking inputs since it is deprecated
-
-    pub fn get_reverse_in_out_polarity(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        short_read!(self, map::REVERSE_IN_OUT_POLARITY, parse_su32)
-    }
-
-    pub fn set_reverse_in_out_polarity(
-        &mut self,
-        b: u32,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(b & 0x1ff00ff == b, DriverError::InvalidArgument);
-        short_write!(self, map::REVERSE_IN_OUT_POLARITY, b)
-    }
-
-    pub fn get_input_debounce_time(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        short_read!(self, map::INPUT_DEBOUNCE_TIME, parse_su8)
-    }
-
-    pub fn set_input_debounce_time(&mut self, t: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(t <= 250, DriverError::InvalidArgument);
-        short_write!(self, map::INPUT_DEBOUNCE_TIME, t)
-    }
-
-    // TODO set outputs
-    // TODO read eeprom byte
-
-    pub fn reset_eeprom(&mut self) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::RESET_EEPROM, "")
-    }
-
-    // TODO automatic satus sending
-    // TODO start bootloader
-
-    pub fn get_reverse_clearance(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        short_read!(self, map::REVERSE_CLEARANCE, parse_su16)
-    }
-
-    pub fn set_reverse_clearance(&mut self, c: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(c <= 9999, DriverError::InvalidArgument);
-        short_write!(self, map::REVERSE_CLEARANCE, c)
-    }
-
-    pub fn get_ramp_type(&mut self) -> DResult<impl ResponseHandle<Ret = RampType>> {
-        long_read!(self, map::RAMP_TYPE, RampType::parse)
-    }
-
-    pub fn set_ramp_type(&mut self, t: RampType) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::RAMP_TYPE, t)
-    }
-
-    pub fn get_brake_voltage_off_wait_time(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        long_read!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, parse_su16)
-    }
-
-    pub fn set_brake_voltage_off_wait_time(
-        &mut self,
-        t: u16,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::WAIT_TIME_BRAKE_VOLTAGE_OFF, t)
-    }
-
-    pub fn get_motor_movement_wait_time(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        long_read!(self, map::WAIT_TIME_MOTOR_MOVE, parse_su16)
-    }
-
-    pub fn set_motor_movement_wait_time(
-        &mut self,
-        t: u16,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::WAIT_TIME_MOTOR_MOVE, t)
-    }
-
-    pub fn get_motor_current_off_wait_time(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        long_read!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, parse_su16)
-    }
-
-    pub fn set_motor_current_off_wait_time(
-        &mut self,
-        t: u16,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::WAIT_TIME_MOTOR_CURRENT_OFF, t)
-    }
-
-    pub fn get_baud_rate(&mut self) -> DResult<impl ResponseHandle<Ret = BaudRate>> {
-        long_read!(self, map::BAUD_RATE, BaudRate::parse)
-    }
-
-    pub fn set_baud_rate(&mut self, br: BaudRate) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::BAUD_RATE, br)
-    }
-
-    // TODO set crc checksum
-    // TODO set hall config
-
-    pub fn get_temp_raw(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        short_read!(self, map::READ_TEMP, parse_su16)
-    }
-
-    pub fn get_temp(&mut self) -> DResult<impl ResponseHandle<Ret = f64>> {
-        short_read!(
-            self,
-            map::READ_TEMP,
-            parse_su16.map(|r| (1_266_500f64
-                / (4250f64
-                    + ((0.33f64 * (((r as f64) / 1023f64) / (1f64 - ((r as f64) / 1023f64))))
-                        .log10()
-                        * 298f64)))
-                - 273f64)
-        )
-    }
-
-    pub fn get_quickstop_ramp(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        short_read!(self, map::QUICKSTOP_RAMP, parse_su16)
-    }
-
-    pub fn set_quickstop_ramp(&mut self, s: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(s <= 8000, DriverError::InvalidArgument);
-        short_write!(self, map::QUICKSTOP_RAMP, s)
-    }
-
-    pub fn get_quickstop_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        long_read!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, parse_su32)
-    }
-
-    pub fn set_quickstop_ramp_no_conversion(
-        &mut self,
-        r: u32,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(r <= 3_000_000, DriverError::InvalidArgument);
-        long_write!(self, map::QUICKSTOP_RAMP_NO_CONVERSION, r)
-    }
-
-    pub fn get_gearfactor_numerator(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        long_read!(self, map::GEAR_FACTOR_NUMERATOR, parse_su8)
-    }
-
-    pub fn set_gearfactor_numerator(&mut self, n: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::GEAR_FACTOR_NUMERATOR, n)
-    }
-
-    pub fn get_gearfactor_denominator(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
-        long_read!(self, map::GEAR_FACTOR_DENOMINATOR, parse_su8)
-    }
-
-    pub fn set_gearfactor_denominator(&mut self, d: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        long_write!(self, map::GEAR_FACTOR_DENOMINATOR, d)
-    }
-
-    pub fn stop_motor(&mut self, stop: MotorStop) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::STOP_MOTOR, stop)
-    }
-
-    pub fn load_record(&mut self, n: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n >= 1 && n <= 32, DriverError::InvalidArgument);
-        short_write!(self, map::LOAD_RECORD, n)
-    }
-
-    /// This method doesn't return a ResponseHandle since it doesn't actually send
-    /// a command from the motor but rather just returns a value stored within
-    /// this struct. See also [`set_respond_mode`][Motor::set_respond_mode]
-    pub fn get_respond_mode(&mut self) -> RespondMode {
-        self.driver
-            .as_ref()
-            .get_respond_mode(self.address.single_expect("Can only read from one motor"))
-    }
-
-    /// See [`set_respond_mode`][Motor::set_respond_mode]
-    pub fn get_current_record(&mut self) -> DResult<impl ResponseHandle<Ret = Record>> {
-        read!(
-            self,
-            preceded(tag(map::READ), Record::parse),
-            format_args!("{}{}", map::READ, map::READ_CURRENT_RECORD)
-        )
-    }
-
-    /// See [`set_respond_mode`][Motor::set_respond_mode]
-    pub fn get_record(&mut self, n: u8) -> DResult<impl ResponseHandle<Ret = Record>> {
-        ensure!(n <= 32, DriverError::InvalidArgument);
-        read!(
-            self,
-            // FIXME concrete value instead of just parse_su8
-            preceded(tuple((tag(map::READ), parse_su8)), Record::parse),
-            format_args!("{}{}{}", map::READ, n, map::READ_CURRENT_RECORD)
-        )
-    }
-
-    /// This command doesn't exist in the manual.
-    /// [1.6.4 Reading out the current record](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf#%5B%7B%22num%22%3A123%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C113%2C742%2Cnull%5D)
-    /// was so convoluted that it was split into multiple functions, namely this
-    /// one, [`get_current_record`][Motor::get_current_record],
-    /// [`get_record`][Motor::get_record] and [`get_respond_mode`][Motor::get_respond_mode].
-    /// This function is responsible for setting whether or not the firmware
-    /// responds to most commands and the other 2 are responsible for actually
-    /// reading out records.
-    pub fn set_respond_mode(
-        &mut self,
-        mode: RespondMode,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        if let MotorAddress::Single(a) = self.address {
-            self.driver.as_ref().set_respond_mode(a, mode);
-        } else {
-            self.driver.as_ref().set_respond_mode_all(mode);
+        pub fn set_record_pause(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
+            self.short_write(map::RECORD_PAUSE, n)
         }
-        short_write!(self, map::READ_CURRENT_RECORD, mode)
-    }
 
-    pub fn save_record(&mut self, n: u8) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n >= 1 && n <= 32, DriverError::InvalidArgument);
-        short_write!(self, map::SAVE_RECORD, n)
-    }
-
-    pub fn get_positioning_mode(&mut self) -> DResult<impl ResponseHandle<Ret = PositioningMode>> {
-        short_read!(self, map::POSITIONING_MODE, PositioningMode::parse)
-    }
-
-    pub fn set_positioning_mode(
-        &mut self,
-        mode: PositioningMode,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::POSITIONING_MODE, mode)
-    }
-
-    pub fn get_travel_distance(&mut self) -> DResult<impl ResponseHandle<Ret = i32>> {
-        short_read!(self, map::TRAVEL_DISTANCE, parse_i32)
-    }
-
-    pub fn set_travel_distance(&mut self, distance: i32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(
-            distance >= -100_000_000 && distance <= 100_000_000,
-            DriverError::InvalidArgument
-        );
-        short_write!(self, map::TRAVEL_DISTANCE, distance)
-    }
-
-    pub fn get_min_frequency(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        short_read!(self, map::MIN_FREQUENCY, parse_su32)
-    }
-
-    pub fn set_min_frequency(&mut self, frequency: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(
-            frequency >= 1 && frequency <= 160_000,
-            DriverError::InvalidArgument
-        );
-        short_write!(self, map::MIN_FREQUENCY, frequency)
-    }
-
-    pub fn get_max_frequency(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        short_read!(self, map::MAX_FREQUENCY, parse_su32)
-    }
-
-    pub fn set_max_frequency(&mut self, frequency: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(
-            frequency >= 1 && frequency <= 1_000_000,
-            DriverError::InvalidArgument
-        );
-        short_write!(self, map::MAX_FREQUENCY, frequency)
-    }
-
-    pub fn get_max_frequency2(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        short_read!(self, map::MAX_FREQUENCY2, parse_su32)
-    }
-
-    pub fn set_max_frequency2(&mut self, frequency: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(
-            frequency >= 1 && frequency <= 1_000_000,
-            DriverError::InvalidArgument
-        );
-        short_write!(self, map::MAX_FREQUENCY2, frequency)
-    }
-
-    pub fn get_accel_ramp(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        short_read!(self, map::ACCEL_RAMP, parse_su16)
-    }
-
-    pub fn set_accel_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n >= 1, DriverError::InvalidArgument);
-        short_write!(self, map::ACCEL_RAMP, n)
-    }
-
-    pub fn get_accel_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        long_read!(self, map::ACCEL_RAMP_NO_CONVERSION, parse_su32)
-    }
-
-    pub fn set_accel_ramp_no_conversion(
-        &mut self,
-        n: u32,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n >= 1 && n <= 3_000_000, DriverError::InvalidArgument);
-        long_write!(self, map::ACCEL_RAMP_NO_CONVERSION, n)
-    }
-
-    pub fn get_brake_ramp(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        short_read!(self, map::BRAKE_RAMP, parse_su16)
-    }
-
-    pub fn set_brake_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::BRAKE_RAMP, n)
-    }
-
-    pub fn get_brake_ramp_no_conversion(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        long_read!(self, map::BRAKE_RAMP_NO_CONVERSION, parse_su32)
-    }
-
-    pub fn set_brake_ramp_no_conversion(
-        &mut self,
-        n: u32,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n <= 3_000_000, DriverError::InvalidArgument);
-        long_write!(self, map::BRAKE_RAMP_NO_CONVERSION, n)
-    }
-
-    pub fn get_rotation_direction(
-        &mut self,
-    ) -> DResult<impl ResponseHandle<Ret = RotationDirection>> {
-        short_read!(self, map::ROTATION_DIRECTION, RotationDirection::parse)
-    }
-
-    pub fn set_rotation_direction(
-        &mut self,
-        direction: RotationDirection,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::ROTATION_DIRECTION, direction)
-    }
-
-    pub fn get_rotation_direction_change(&mut self) -> DResult<impl ResponseHandle<Ret = bool>> {
-        short_read!(
-            self,
-            map::ROTATION_DIRECTION_CHANGE,
-            parse_su8.map(|n| n == 1)
-        )
-    }
-
-    pub fn set_rotation_direction_change(
-        &mut self,
-        change: bool,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::ROTATION_DIRECTION_CHANGE, change as u8)
-    }
-
-    pub fn get_repetitions(&mut self) -> DResult<impl ResponseHandle<Ret = Repetitions>> {
-        short_read!(self, map::REPETITIONS, Repetitions::parse)
-    }
-
-    pub fn set_repetitions(&mut self, n: Repetitions) -> DResult<impl ResponseHandle<Ret = ()>> {
-        if let Repetitions::N(r) = n {
-            ensure!(r <= 254, DriverError::InvalidArgument);
-        }
-        short_write!(self, map::REPETITIONS, n)
-    }
-
-    pub fn get_record_pause(&mut self) -> DResult<impl ResponseHandle<Ret = u16>> {
-        short_read!(self, map::RECORD_PAUSE, parse_su16)
-    }
-
-    pub fn set_record_pause(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::RECORD_PAUSE, n)
-    }
-
-    pub fn get_continuation_record(&mut self) -> DResult<impl ResponseHandle<Ret = Option<u8>>> {
-        short_read!(
-            self,
-            map::CONTINUATION_RECORD,
-            parse_su8.map(|r| {
-                if r == 0 {
-                    None
-                } else {
-                    Some(r)
+        pub fn set_continuation_record(
+            &mut self,
+            n: Option<u8>,
+        ) -> DResult<impl ResponseHandle<Ret = ()>> {
+            let r = match n {
+                Some(r) => {
+                    ensure!(r <= 32 && r >= 1, DriverError::InvalidArgument);
+                    r
                 }
-            })
-        )
-    }
+                None => 0,
+            };
+            self.short_write(map::CONTINUATION_RECORD, r)
+        }
 
-    pub fn set_continuation_record(
-        &mut self,
-        n: Option<u8>,
-    ) -> DResult<impl ResponseHandle<Ret = ()>> {
-        let r = match n {
-            Some(r) => {
-                ensure!(r <= 32 && r >= 1, DriverError::InvalidArgument);
-                r
-            }
-            None => 0,
-        };
-        short_write!(self, map::CONTINUATION_RECORD, r)
-    }
+        pub fn set_max_accel_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n >= 1 && n <= 100_000_000, DriverError::InvalidArgument);
+            self.short_write(map::MAX_ACCEL_JERK, n)
+        }
 
-    pub fn get_max_accel_jerk(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        short_read!(self, map::MAX_ACCEL_JERK, parse_su32)
-    }
-
-    pub fn set_max_accel_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n >= 1 && n <= 100_000_000, DriverError::InvalidArgument);
-        short_write!(self, map::MAX_ACCEL_JERK, n)
-    }
-
-    pub fn get_max_brake_jerk(&mut self) -> DResult<impl ResponseHandle<Ret = u32>> {
-        short_read!(self, map::MAX_BRAKE_JERK, parse_su32)
-    }
-
-    pub fn set_max_brake_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
-        ensure!(n >= 1 && n <= 100_000_000, DriverError::InvalidArgument);
-        short_write!(self, map::MAX_BRAKE_JERK, n)
-    }
+        pub fn set_max_brake_jerk(&mut self, n: u32) -> DResult<impl ResponseHandle<Ret = ()>> {
+            ensure!(n >= 1 && n <= 100_000_000, DriverError::InvalidArgument);
+            self.short_write(map::MAX_BRAKE_JERK, n)
+        }
+    };
 }
 
-impl Motor<NoSendAutoStatus> {
-    pub(super) fn new(driver: Arc<InnerDriver>, address: MotorAddress) -> Self {
-        Motor {
-            driver,
-            address,
-            marker_as: PhantomData,
-        }
-    }
-
-    // FIXME block for allmotor, since we can't map all motor types
-    /// Enables [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
-    ///
-    /// This function consumes the motor and if the command was successful,
-    /// returns a motor with type `Motor<I, SendAutoStatus>`. There, the
-    /// return-type of [`start_motor`][Motor::start_motor] is adjusted to be then
-    /// able to wait on the motor status, making it possble to know when the motor
-    /// finished.
-    ///
-    /// # Panics
-    /// If the current motor is the [`AllMotor`]
-    ///
-    /// # Errors
-    /// If the command fails for any reason, a [`MotorMappingError`] is returned.
-    /// It contains the actual [`DriverError`] and the original motor, making
-    /// it possible to try again.
-    pub fn start_sending_auto_status(
-        self,
-    ) -> Result<
-        impl ResponseHandle<MotorMappingError<NoSendAutoStatus>, Ret = Motor<SendAutoStatus>>,
-        MotorMappingError<NoSendAutoStatus>,
-    > {
-        // helper just for setting the of the "returned" error of short_write
-        // right, because it has the ? operator in it but only returns a driver
-        // error and we need to map that.
-        // FIXME don't use macro, then we don't have to use the helper function
-        fn w(s: &Motor<NoSendAutoStatus>) -> DResult<WrapperResponseHandle> {
-            short_write!(s, map::AUTO_STATUS_SENDING, 1)
-        }
-        let rh = w(&self);
-        match rh {
-            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| unsafe {
-                // Safety:
-                // Motor is repr(C), meaning we can assume the repr will be
-                // the same way
-                // PhantomData is a ZST, meaning it doesn't matter what we cast
-                // it to
-                //
-                // Unfortunately there's not really a better way, at least not
-                // one that won't really clutter code with unwraps and so on
-                // FIXME ?
-                mem::transmute::<Motor<NoSendAutoStatus>, Motor<SendAutoStatus>>(m)
-            })),
-            Err(e) => Err(MotorMappingError(self, e)),
-        }
-    }
-
-    /// Starts the motor, also see [1.6.1 Starting a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
-    ///
-    /// This function is only used when [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
-    /// isn't enabled. See also [`start_sending_auto_status`][Motor::start_sending_auto_status]
-    pub fn start_motor(&mut self) -> DResult<impl ResponseHandle<Ret = ()>> {
-        short_write!(self, map::START_MOTOR, "")
-    }
-}
-
-impl Motor<SendAutoStatus> {
-    // FIXME block for allmotor, since we can't map all motor types
-    /// Disables [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
-    ///
-    /// This function consumes the motor and if the command was successful,
-    /// returns a motor with type `Motor<I, NoSendAutoStatus>`. There, the
-    /// return-type of [`start_motor`][Motor::start_motor] is adjusted to not
-    /// return anything.
-    ///
-    /// # Panics
-    /// If the current motor is the [`AllMotor`]
-    ///
-    /// # Errors
-    /// If the command fails for any reason, a [`MotorMappingError`] is returned.
-    /// It contains the actual [`DriverError`] and the original motor, making
-    /// it possible to try again.
-    pub fn stop_sending_auto_status(
-        self,
-    ) -> Result<
-        impl ResponseHandle<MotorMappingError<SendAutoStatus>, Ret = Motor<NoSendAutoStatus>>,
-        MotorMappingError<SendAutoStatus>,
-    > {
-        // FIXME implement seperate version for allmotor
-        // NOTE this is just a hotfix sortof for not having implemented the
-        // seperate version yet
-        match self.address {
-            MotorAddress::All => unimplemented!(),
-            _ => (),
-        }
-        // helper just for setting the of the "returned" error of short_write
-        // right, because it has the ? operator in it but only returns a driver
-        // error and we need to map that.
-        // FIXME don't use macro, then we don't have to use the helper function
-        fn w(s: &Motor<SendAutoStatus>) -> DResult<WrapperResponseHandle> {
-            short_write!(s, map::AUTO_STATUS_SENDING, 0)
-        }
-        let rh = w(&self);
-        match rh {
-            Ok(h) => Ok(MotorMappingResponseHandle::new(self, h, |m| unsafe {
-                // Safety:
-                // Motor is repr(C), meaning we can assume the repr will be
-                // the same way
-                // PhantomData is a ZST, meaning it doesn't matter what we cast
-                // it to
-                //
-                // Unfortunately there's not really a better way, at least not
-                // one that won't really clutter code with unwraps and so on
-                // FIXME ?
-                mem::transmute::<Motor<SendAutoStatus>, Motor<NoSendAutoStatus>>(m)
-            })),
-            Err(e) => Err(MotorMappingError(self, e)),
-        }
-    }
-
-    /// Starts the motor, also see [1.6.1 Starting a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
-    ///
-    /// This function is only used when [1.5.33 Setting automatic sending of the status](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
-    /// is enabled. This means that the first handle returns another handle that,
-    /// when waited on, returns the status of the motor. See also
-    /// [`start_sending_auto_status`][Motor::start_sending_auto_status]
-    ///
-    /// # Examples
-    /// ```no_run
-    /// # use nanotec_stepper_driver::{Driver, ResponseHandle, RespondMode};
-    /// use std::time::Duration;
-    /// use serialport;
-    ///
-    /// let s = serialport::new("/dev/ttyUSB0", 115200)
-    ///     .timeout(Duration::from_secs(1))
-    ///     .open()
-    ///     .unwrap();
-    /// let mut driver = Driver::new(s).unwrap();
-    /// let mut m = driver.add_motor(1, RespondMode::NotQuiet).unwrap();
-    ///
-    /// let mut m = m.start_sending_auto_status().unwrap().wait().unwrap();
-    ///
-    /// let handle = m.start_motor().unwrap().wait().unwrap();
-    /// println!("started motor");
-    /// let status = handle.wait().unwrap();
-    /// println!("motor finished");
-    /// ```
-    pub fn start_motor(
-        &mut self,
-    ) -> DResult<impl ResponseHandle<Ret = impl ResponseHandle<Ret = MotorStatus>>> {
-        let driver = Arc::clone(&self.driver);
-        // FIXME implement seperate version for all motors
-        let address = self.address.single();
-        short_write!(self, map::START_MOTOR, "")
-            .map(move |h| h.map(move |()| StatusResponseHandle::new(driver, address)))
-    }
-}
-
-impl<AS: AutoStatusMode> Drop for Motor<AS> {
-    /// Removes this motor from the driver.\
-    /// Afterwards, a motor with this address can be added again by calling
-    /// [`Driver::add_motor`][super::Driver::add_motor].
-    ///
-    /// See also [here][`Drop`]
-    fn drop(&mut self) {
-        if let MotorAddress::Single(a) = self.address {
-            self.driver.as_ref().drop_motor(&a)
-        } else {
-            self.driver.as_ref().drop_all_motor()
-        }
-    }
-}
+pub(self) use motor_common_functions;

@@ -2,7 +2,9 @@ pub(crate) mod map;
 pub(crate) mod read;
 pub(crate) mod write;
 
-use super::DriverError;
+use self::map::ResponseHandleMap;
+
+use super::{DriverError, Map};
 use std::{error::Error, fmt::Debug, marker::PhantomData};
 use thiserror::Error;
 
@@ -83,6 +85,8 @@ where
 
 //
 
+// TODO maybe just replce with callbacks? would be sortof a big change tho
+//
 // Needs different types for fatal and recoverable errors because, depending on the
 // response handle because in some handles (e.g. MotorMappingResponseHandle) a
 // fatal error might need to return additional information, which a recoverable
@@ -105,7 +109,7 @@ where
 /// waits for the result, as well as the original error.
 ///
 /// In some cases the fatal error needs to be a different type than the recoverable
-/// error, for example when calling [`Motor::start_sending_auto_status`][super::motor::Motor::start_sending_auto_status],
+/// error, for example when calling [`Motor::start_sending_auto_status`][super::motor::single::Motor::start_sending_auto_status],
 /// where the original motor needs to be returned on a fatal error.
 #[derive(Error)]
 pub enum ResponseError<H, T, EF, ER = DriverError>
@@ -339,3 +343,22 @@ where
     where
         Self: Sized;
 }
+
+impl<EF, ER, H, T> ResponseHandle<EF, ER> for Map<u8, H>
+where
+    EF: Error + Into<DriverError>,
+    ER: Error + Into<DriverError>,
+    H: ResponseHandle<EF, ER, Ret = T>,
+{
+    type Ret = Map<u8, H>;
+
+    fn wait(self) -> Result<Self::Ret, ResponseError<Self, Self::Ret, EF, ER>>
+    where
+        Self: Sized,
+    {
+        for handle in self {}
+        todo!()
+    }
+}
+
+// TODO impl ResponseHandle<T> for Box<dyn ResponseHandle<T>>?

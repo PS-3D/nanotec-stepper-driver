@@ -1,7 +1,7 @@
 use super::{
     super::{
         cmd::frame::MotorAddress,
-        motor::{AutoStatusMode, Motor},
+        motor::single::{AutoStatusMode, Motor},
         DriverError, InnerDriver,
     },
     ResponseError, ResponseHandle,
@@ -11,6 +11,7 @@ use thiserror::Error;
 
 //
 
+// FIXME split in all and single?
 // Implementation for write commands
 // implementations for read and write were split so we don't need to parse as much
 // since for write commands we only need to check if the payload matched what we
@@ -69,24 +70,30 @@ impl ResponseHandle for WriteResponseHandle {
 
 // Responsehandle for motors with RespondMode::Quiet
 #[derive(Debug)]
-pub(in super::super) struct DummyResponseHandle();
+pub(in super::super) struct DummyResponseHandle<T>(T);
 
-impl DummyResponseHandle {
-    pub fn new() -> Self {
-        Self()
+impl<T> DummyResponseHandle<T> {
+    pub fn new(ret: T) -> Self {
+        Self(ret)
     }
 }
 
-impl ResponseHandle for DummyResponseHandle {
-    type Ret = ();
+impl<T> ResponseHandle for DummyResponseHandle<T> {
+    type Ret = T;
 
-    fn wait(self) -> Result<(), ResponseError<Self, (), DriverError>> {
-        Ok(())
+    fn wait(self) -> Result<Self::Ret, ResponseError<Self, Self::Ret, DriverError, DriverError>>
+    where
+        Self: Sized,
+    {
+        Ok(self.0)
     }
 }
 
 //
 
+// TODO maybe just remvove and make it a Option<WriteResponseHandle> that when
+// waiting returns just (), whatever it is?
+//
 // Wrapper so we can return Write and Dummy, read is not needed since read
 // commands always return a value
 //
@@ -99,7 +106,7 @@ impl ResponseHandle for DummyResponseHandle {
 #[derive(Debug)]
 pub(in super::super) enum WrapperResponseHandle {
     Write(WriteResponseHandle),
-    Dummy(DummyResponseHandle),
+    Dummy(DummyResponseHandle<()>),
 }
 
 impl ResponseHandle for WrapperResponseHandle {
