@@ -266,18 +266,13 @@ fn add_motor() {
 }
 
 #[test]
+#[should_panic]
 fn add_motor_already_exists() {
     let interface = Interface::new();
     let mut driver = Driver::new(Box::new(interface)).unwrap();
 
     let _m1 = driver.add_motor(1, RespondMode::Quiet).unwrap();
-    let r = driver.add_motor(1, RespondMode::NotQuiet);
-
-    assert!(matches!(
-        r,
-        Err(DriverError::AlreadyExists(MotorAddress::Single(1)))
-    ));
-    assert_eq!(driver.inner.borrow().motors.len(), 1);
+    let _r = driver.add_motor(1, RespondMode::NotQuiet);
 }
 
 #[test]
@@ -311,18 +306,13 @@ fn add_all_motor() {
 }
 
 #[test]
+#[should_panic]
 fn add_all_motor_already_exists() {
     let interface = Interface::new();
     let mut driver = Driver::new(Box::new(interface)).unwrap();
 
     let _a1 = driver.add_all_motor().unwrap();
-    let r = driver.add_all_motor();
-
-    assert!(matches!(
-        r,
-        Err(DriverError::AlreadyExists(MotorAddress::All))
-    ));
-    assert!(driver.inner.borrow().all_exists);
+    let _r = driver.add_all_motor();
 }
 
 #[test]

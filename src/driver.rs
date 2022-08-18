@@ -51,10 +51,6 @@ pub enum DriverError {
     /// Thrown by [`Driver::add_motor`] if the given address was out of bounds
     #[error("address must be 1 <= address <= 254, was {0}")]
     InvalidAddress(u8),
-    /// Thrown by [`Driver::add_motor`] if a motor with that address already
-    /// exists in that driver
-    #[error("motor already exists: {0}")]
-    AlreadyExists(MotorAddress),
     /// Thrown if any funtion in [`Motor`] receives a response that didn't match
     /// what was sent
     #[error("payloads from response and cmd don't match, response was {0:?}")]
@@ -140,9 +136,10 @@ impl InnerDriver {
     // address should also be sanitychecked there
     pub fn add_motor(&mut self, address: u8, respond_mode: RespondMode) -> Result<(), DriverError> {
         // Have to do it this way due to try_insert being nightly
-        ensure!(
+        assert!(
             !self.motors.contains_key(&address),
-            DriverError::AlreadyExists(MotorAddress::Single(address))
+            "motor with address {} already exists in this driver",
+            address
         );
         self.motors
             // chosen more or less randomly, 4 should suffice though
@@ -161,10 +158,7 @@ impl InnerDriver {
 
     // should only be called by Driver::add_all_motor
     pub fn add_all_motor(&mut self) -> Result<(), DriverError> {
-        ensure!(
-            !self.all_exists,
-            DriverError::AlreadyExists(MotorAddress::All)
-        );
+        assert!(!self.all_exists, "all-motor already exists in this driver");
         self.all_exists = true;
         Ok(())
     }
@@ -535,8 +529,10 @@ impl Driver {
     ///
     /// # Errors
     /// Will return a [`DriverError::InvalidAddress`] if the given address is
-    /// out of bounds. If a motor with this address already exists in this driver,
-    /// [`DriverError::AlreadyExists`] is returned.
+    /// out of bounds
+    ///
+    /// # Panics
+    /// If a motor with the given address already exists in the driver.
     ///
     /// # Examples
     /// ```no_run
@@ -572,9 +568,8 @@ impl Driver {
     /// A motor is removed from the driver simply by dropping it. See also
     /// [`AllMotor::drop`].
     ///
-    /// # Errors
-    /// If the all-motor already exists in this driver, [`DriverError::AlreadyExists`]
-    /// is returned.
+    /// # Panics
+    /// If the all-motor already exists in this driver.
     ///
     /// # Examples
     /// ```no_run
