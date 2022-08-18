@@ -27,9 +27,6 @@ use std::{
     rc::Rc,
 };
 
-#[derive(Debug)]
-pub struct AllMotor(Rc<RefCell<InnerDriver>>);
-
 /// Controls all motors at once
 ///
 /// Unlike [`Motor`][super::single::Motor], the AllMotor only contains setters
@@ -75,6 +72,9 @@ pub struct AllMotor(Rc<RefCell<InnerDriver>>);
 /// println!("driving 42000 steps");
 /// assert!(map.is_empty());
 /// ```
+#[derive(Debug)]
+pub struct AllMotor(Rc<RefCell<InnerDriver>>);
+
 impl AllMotor {
     pub(in super::super) fn new(driver: Rc<RefCell<InnerDriver>>) -> Self {
         Self(driver)
