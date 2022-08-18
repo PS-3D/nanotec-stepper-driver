@@ -6,6 +6,7 @@ pub mod estop;
 mod map;
 pub mod motor;
 mod parse;
+// FIXME move to motor, since it belongs there more than here
 pub mod responsehandle;
 
 use self::{
@@ -182,10 +183,9 @@ impl InnerDriverData {
 }
 
 // IMPORTANT
-// 1. never lock read and data at the same time
-//    otherwise the emergency stop will break
-// 2. to lock write and data at the same time, first lock data, then write
-//    drop them in reverse
+// 1. if you need to lock data and read/write, lock data first and then
+//    read or write
+// 2. don't lock read and write at the same time
 struct InnerDriver {
     // TODO make interface also BufWriter so we make less syscalls
     read_interface: Mutex<BufReader<Box<dyn SerialPort>>>,
@@ -222,19 +222,21 @@ impl InnerDriver {
         }
     }
 
-    // LOCKS DATA and LOCKS READ
+    // LOCKS READ
     // -> both have to be unlocked
     // TODO write tests
     // receives a general message. if the message returned by receive_msg
     // isnt a general message, e.g. an automatic status, it is handled appropriately
-    fn receive_general_msg(&self) -> Result<Msg, DriverError> {
+    fn receive_general_msg(
+        &self,
+        data: &mut MutexGuard<InnerDriverData>,
+    ) -> Result<Msg, DriverError> {
         loop {
             // read gets locked (and unlocked) here
             let msg = self.receive_msg()?;
             // ignore error since error means that parser didn't match and
             // so we have to assume the message wasn't a status message
             if let Some(status) = payload::try_parse_auto_status(&msg.payload) {
-                let mut data = self.data.lock().unwrap();
                 data.handle_status_msg(msg.address, status)?;
             } else {
                 return Ok(msg);
@@ -244,7 +246,10 @@ impl InnerDriver {
 
     // LOCKS DATA and LOCKS READ
     // -> both have to be unlocked
-    fn receive_status_msg(&self) -> Result<(u8, MotorStatus), DriverError> {
+    fn receive_status_msg(
+        &self,
+        data: &mut MutexGuard<InnerDriverData>,
+    ) -> Result<(u8, MotorStatus), DriverError> {
         loop {
             // read gets locked (and unlocked) here
             let msg = self.receive_msg()?;
@@ -254,7 +259,6 @@ impl InnerDriver {
                     .single_or(DriverError::UnexpectedResponse(msg.address))?;
                 return Ok((saddr, status));
             } else {
-                let mut data = self.data.lock().unwrap();
                 data.handle_general_msg(msg)?;
             }
         }
@@ -285,13 +289,10 @@ impl InnerDriver {
     // LOCKS DATA and LOCKS READ
     // TODO error out if cmd for other motor is received and that motor wasn't waiting?
     pub fn receive_single(&self, address: u8) -> Result<Vec<u8>, DriverError> {
-        // data gets locked and unlocked here
-        let qfront = {
-            let mut data = self.data.lock().unwrap();
-            // shouldn't panic because this shouldn't get called on an address that
-            // doesn't already exist
-            data.motors.get_mut(&address).unwrap().queue.pop_front()
-        };
+        let mut data = self.data.lock().unwrap();
+        // shouldn't panic because this shouldn't get called on an address that
+        // doesn't already exist
+        let qfront = data.motors.get_mut(&address).unwrap().queue.pop_front();
         // if there's one already in the buffer, return that
         if let Some(p) = qfront {
             Ok(p)
@@ -301,10 +302,8 @@ impl InnerDriver {
             // simplify the receiving process
             loop {
                 // read and data get locked and unlocked here
-                let msg = self.receive_general_msg()?;
-                // data gets locked and unlocked here
+                let msg = self.receive_general_msg(&mut data)?;
                 if let MotorAddress::Single(a) = msg.address {
-                    let mut data = self.data.lock().unwrap();
                     let imotor = data
                         .motors
                         .get_mut(&a)
@@ -325,20 +324,22 @@ impl InnerDriver {
         }
     }
 
+    // LOCKS DATA and LOCKS READ
     pub fn receive_all(&self) -> Result<Vec<u8>, DriverError> {
-        if self.data.lock().unwrap().is_waiting_all() {
+        let mut data = self.data.lock().unwrap();
+        if data.is_waiting_all() {
             // if we're waiting for a response from all motors, there shouldn't
             // be a response from one with a singular address so we can massively
             // simplify the receiving process
-            let allcnt = self.data.lock().unwrap().all.as_ref().unwrap().0;
+            let allcnt = data.all.as_ref().unwrap().0;
             for _ in 0..allcnt {
-                let msg = self.receive_general_msg()?;
+                // locks and unlocks read
+                let msg = self.receive_general_msg(&mut data)?;
                 ensure!(
                     msg.address.is_all(),
                     DriverError::UnexpectedResponse(msg.address)
                 );
                 {
-                    let mut data = self.data.lock().unwrap();
                     // if were receiving there should be something in there
                     let all = data.all.as_mut().unwrap();
                     ensure!(
@@ -349,30 +350,24 @@ impl InnerDriver {
                 }
             }
         }
-        Ok(self.data.lock().unwrap().all.take().unwrap().1)
+        Ok(data.all.take().unwrap().1)
     }
 
     // LOCKS DATA and LOCKS READ
     pub fn receive_status(&self, address: u8) -> Result<MotorStatus, DriverError> {
-        // locks and unlocks data
-        let autostatus = {
-            let mut data = self.data.lock().unwrap();
-            // shouldn't panic since this method should only be called with addresses
-            // that already exist
-            let imotor = data.motors.get_mut(&address).unwrap();
-            imotor.autostatus
-        };
-        if let Some(status) = autostatus {
+        let mut data = self.data.lock().unwrap();
+        // shouldn't panic since this method should only be called with addresses
+        // that already exist
+        let imotor = data.motors.get_mut(&address).unwrap();
+        if let Some(status) = imotor.autostatus {
             Ok(status)
         } else {
             loop {
-                // locks and unlocks data and read
-                let status = self.receive_status_msg()?;
+                // locks and unlocks read
+                let status = self.receive_status_msg(&mut data)?;
                 if status.0 == address {
                     return Ok(status.1);
                 } else {
-                    // locks and unlocks data
-                    let mut data = self.data.lock().unwrap();
                     // for now we have to wrap the address into a MotorAddress
                     // again, in the future we probably have to make a type for
                     // Msg Payloads
@@ -383,16 +378,12 @@ impl InnerDriver {
         }
     }
 
-    // LOCKS DATA and LOCKS WRITE
-    // send_single split in 2 functions cause there are cases like reading values
-    // where there will always be a response. this isn't the case with send_all
-    // since there only write functions are allowed
-    pub fn send_single_no_response(
+    pub fn send_single_no_response_inner(
         &self,
         address: u8,
         args: Arguments<'_>,
+        data: &MutexGuard<InnerDriverData>,
     ) -> Result<(), DriverError> {
-        let data = self.data.lock().unwrap();
         // if we are waiting for a response from all motors we can't send to
         // a singular motor because we don't know if it's ready yet. only when
         // all motors answered we can be sure
@@ -408,14 +399,26 @@ impl InnerDriver {
     }
 
     // LOCKS DATA and LOCKS WRITE
+    // send_single split in 2 functions cause there are cases like reading values
+    // where there will always be a response. this isn't the case with send_all
+    // since there only write functions are allowed
+    pub fn send_single_no_response(
+        &self,
+        address: u8,
+        args: Arguments<'_>,
+    ) -> Result<(), DriverError> {
+        let data = self.data.lock().unwrap();
+        self.send_single_no_response_inner(address, args, &data)
+    }
+
+    // LOCKS DATA and LOCKS WRITE
     pub fn send_single_with_response(
         &self,
         address: u8,
         args: Arguments<'_>,
     ) -> Result<(), DriverError> {
-        // locks and unlocks data and write
-        self.send_single_no_response(address, args)?;
         let mut data = self.data.lock().unwrap();
+        self.send_single_no_response_inner(address, args, &data)?;
         data.motors.get_mut(&address).unwrap().available = false;
         Ok(())
     }
