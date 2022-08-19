@@ -71,6 +71,13 @@ impl Display for StepMode {
     }
 }
 
+impl Default for StepMode {
+    /// Returns the default specified in the manual, i.e. [`StepMode::S2`]
+    fn default() -> Self {
+        Self::S2
+    }
+}
+
 //
 
 /// Helper binding for values of [1.5.9 Setting the limit switch behavior](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
@@ -81,6 +88,13 @@ impl Display for StepMode {
 pub enum LimitSwitchBehaviorReference {
     FreeTravelForwards,
     FreeTravelBackwards,
+}
+
+impl Default for LimitSwitchBehaviorReference {
+    /// Returns the default specified in the manual, i.e. [`LimitSwitchBehaviorReference::FreeTravelBackwards`]
+    fn default() -> Self {
+        Self::FreeTravelBackwards
+    }
 }
 
 //
@@ -95,6 +109,13 @@ pub enum LimitSwitchBehaviorNormal {
     FreeTravelBackwards,
     Stop,
     Ignore,
+}
+
+impl Default for LimitSwitchBehaviorNormal {
+    /// Returns the default specified in the manual, i.e. [`LimitSwitchBehaviorNormal::Ignore`]
+    fn default() -> Self {
+        Self::Ignore
+    }
 }
 
 //
@@ -117,7 +138,7 @@ pub enum LimitSwitchBehaviorNormal {
 /// assert_eq!(0xa05, u32::from(example))
 /// ```
 /// `example` would correspond to bits 0, 2, 9 and 11 being set.
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Default)]
 pub struct LimitSwitchBehavior {
     /// Corresponds to the first 2 bits
     pub internal_reference: LimitSwitchBehaviorReference,
@@ -241,6 +262,13 @@ impl ErrorCorrectionMode {
 impl Display for ErrorCorrectionMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+impl Default for ErrorCorrectionMode {
+    /// Returns the default specified in the manual, i.e. [`ErrorCorrectionMode::Off`]
+    fn default() -> Self {
+        Self::Off
     }
 }
 
@@ -570,6 +598,13 @@ impl Display for RampType {
     }
 }
 
+impl Default for RampType {
+    /// Returns the default specified in the manual, i.e. [`RampType::Trapezoidal`]
+    fn default() -> Self {
+        Self::Trapezoidal
+    }
+}
+
 //
 
 /// Binding for values of [1.5.40 Setting baud rate of the controller](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
@@ -604,6 +639,13 @@ impl Display for BaudRate {
     }
 }
 
+impl Default for BaudRate {
+    /// Returns the default specified in the manual, i.e. [`BaudRate::B115200`]
+    fn default() -> Self {
+        Self::B115200
+    }
+}
+
 //
 
 /// Binding for values of [1.6.2 Stopping a motor](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
@@ -616,6 +658,13 @@ pub enum MotorStop {
 impl Display for MotorStop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+impl Default for MotorStop {
+    /// Returns the default specified in the manual, i.e. [`MotorStop::QuickStop`]
+    fn default() -> Self {
+        Self::QuickStop
     }
 }
 
@@ -641,6 +690,13 @@ impl RespondMode {
 impl Display for RespondMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+impl Default for RespondMode {
+    /// Returns the default specified in the manual, i.e. [`RespondMode::NotQuiet`]
+    fn default() -> Self {
+        Self::NotQuiet
     }
 }
 
@@ -682,6 +738,13 @@ impl Display for PositioningMode {
     }
 }
 
+impl Default for PositioningMode {
+    /// Returns the default specified in the manual, i.e. [`PositioningMode::Relative`]
+    fn default() -> Self {
+        Self::Relative
+    }
+}
+
 //
 
 /// Binding for values of [1.6.15 Setting the direction of rotation](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
@@ -700,6 +763,13 @@ impl RotationDirection {
 impl Display for RotationDirection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+impl Default for RotationDirection {
+    /// Returns the default specified in the manual, i.e. [`RotationDirection::Left`]
+    fn default() -> Self {
+        Self::Left
     }
 }
 
@@ -729,6 +799,13 @@ impl Display for Repetitions {
             Self::Endless => write!(f, "0"),
             Self::N(n) => write!(f, "{}", n),
         }
+    }
+}
+
+impl Default for Repetitions {
+    /// Returns the default specified in the manual, i.e. `Repetitions::N(1)`
+    fn default() -> Self {
+        Self::N(1)
     }
 }
 
