@@ -758,6 +758,24 @@ impl RotationDirection {
     pub(crate) fn parse(s: &[u8]) -> IResult<&[u8], Self, ParseError<&[u8]>> {
         parse_enum_value(s, parse_su8, RotationDirection::from_u8)
     }
+
+    /// Reverses the direction
+    ///
+    /// # Examples
+    /// ```
+    /// # use nanotec_stepper_driver::RotationDirection;
+    ///
+    /// let dir = RotationDirection::Left;
+    /// let rev = dir.reverse();
+    ///
+    /// assert_eq!(rev, RotationDirection::Right);
+    /// ```
+    pub fn reverse(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
 }
 
 impl Display for RotationDirection {
