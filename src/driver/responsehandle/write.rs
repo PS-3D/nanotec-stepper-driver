@@ -4,7 +4,7 @@ use super::{
         motor::single::{AutoStatusMode, Motor},
         DriverError, InnerDriver,
     },
-    ResponseError, ResponseHandle,
+    Ignore, ResponseError, ResponseHandle,
 };
 use std::{cell::RefCell, fmt::Debug, marker::PhantomData, rc::Rc};
 use thiserror::Error;
@@ -151,6 +151,12 @@ impl<AS: AutoStatusMode> From<MotorMappingError<AS>> for DriverError {
 impl<AS: AutoStatusMode> Debug for MotorMappingError<AS> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "MotorMappingError(_, {:?})", self.1)
+    }
+}
+
+impl<T, AS: AutoStatusMode> Ignore<T> for Result<T, MotorMappingError<AS>> {
+    fn ignore(self) -> Result<T, DriverError> {
+        self.map_err(DriverError::from)
     }
 }
 
