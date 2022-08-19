@@ -9,6 +9,8 @@ type DResult<T> = Result<T, DriverError>;
 
 //
 
+// TODO public default values for all commands with default values
+// TODO public limits for all commands with limits?
 macro_rules! motor_common_functions {
     ($write:expr) => {
         fn short_write<D: Display>(
@@ -16,7 +18,11 @@ macro_rules! motor_common_functions {
             mnemonic: &str,
             data: D,
         ) -> Result<WrapperResponseHandle, DriverError> {
-            $write(self, format_args!("{}{}", mnemonic, data))
+            $write(
+                self,
+                format_args!("{}{}", mnemonic, data),
+                format_args!("{}{}", mnemonic, data),
+            )
         }
 
         fn long_write<D: Display>(
@@ -24,7 +30,11 @@ macro_rules! motor_common_functions {
             mnemonic: &str,
             data: D,
         ) -> Result<WrapperResponseHandle, DriverError> {
-            $write(self, format_args!("{}={}", mnemonic, data))
+            $write(
+                self,
+                format_args!("{}={}", mnemonic, data),
+                format_args!("{}{}", mnemonic, data),
+            )
         }
 
         pub fn set_motor_type(&mut self, t: MotorType) -> DResult<impl ResponseHandle<Ret = ()>> {

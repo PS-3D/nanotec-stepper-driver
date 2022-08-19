@@ -287,7 +287,11 @@ pub struct Motor<AS: AutoStatusMode> {
 // DResult<impl ResponseHandle<Ret = T>> is not an alias since aliases with
 // impl aren't supported yet
 impl<AS: AutoStatusMode> Motor<AS> {
-    fn write(&self, args: Arguments<'_>) -> Result<WrapperResponseHandle, DriverError> {
+    fn write(
+        &self,
+        args: Arguments<'_>,
+        expect_args: Arguments<'_>,
+    ) -> Result<WrapperResponseHandle, DriverError> {
         let rm = {
             let mut driver = self.driver.borrow_mut();
             // FIXME maybe move this logic to driver and return RespondMode
@@ -304,12 +308,12 @@ impl<AS: AutoStatusMode> Motor<AS> {
                 // unfortunately there isn't a better way rn.
                 // value chosen sorta random, 64 bytes should be enough for nearly all
                 // commands tho
-                let mut sent = Vec::with_capacity(64);
-                sent.write_fmt(args)?;
+                let mut expect = Vec::with_capacity(64);
+                expect.write_fmt(expect_args)?;
                 WrapperResponseHandle::Write(WriteResponseHandle::new(
                     Rc::clone(&self.driver),
                     MotorAddress::Single(self.address),
-                    sent,
+                    expect,
                 ))
             }
             RespondMode::Quiet => WrapperResponseHandle::Dummy(DummyResponseHandle::new(())),

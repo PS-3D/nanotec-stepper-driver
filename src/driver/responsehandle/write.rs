@@ -21,15 +21,15 @@ pub(in super::super) struct WriteResponseHandle {
     driver: Rc<RefCell<InnerDriver>>,
     address: MotorAddress,
     // payload we sent
-    sent: Vec<u8>,
+    expect: Vec<u8>,
 }
 
 impl WriteResponseHandle {
-    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: MotorAddress, sent: Vec<u8>) -> Self {
+    pub fn new(driver: Rc<RefCell<InnerDriver>>, address: MotorAddress, expect: Vec<u8>) -> Self {
         Self {
             driver,
             address,
-            sent,
+            expect,
         }
     }
 }
@@ -54,7 +54,7 @@ impl ResponseHandle for WriteResponseHandle {
                 return Err(ResponseError::from_driver_error(self, e));
             }
         };
-        if self.sent == payload {
+        if self.expect == payload {
             Ok(())
         } else {
             drop(driver);

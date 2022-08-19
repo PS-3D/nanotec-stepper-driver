@@ -80,19 +80,23 @@ impl AllMotor {
         Self(driver)
     }
 
-    fn write(&self, args: Arguments<'_>) -> Result<WrapperResponseHandle, DriverError> {
+    fn write(
+        &self,
+        args: Arguments<'_>,
+        expect_args: Arguments<'_>,
+    ) -> Result<WrapperResponseHandle, DriverError> {
         let rm = self.0.borrow_mut().send_all(args)?;
         Ok(match rm {
             RespondMode::NotQuiet => {
                 // unfortunately there isn't a better way rn.
                 // value chosen sorta random, 64 bytes should be enough for nearly all
                 // commands tho
-                let mut sent = Vec::with_capacity(64);
-                sent.write_fmt(args)?;
+                let mut expect = Vec::with_capacity(64);
+                expect.write_fmt(expect_args)?;
                 WrapperResponseHandle::Write(WriteResponseHandle::new(
                     Rc::clone(&self.0),
                     MotorAddress::All,
-                    sent,
+                    expect,
                 ))
             }
             RespondMode::Quiet => WrapperResponseHandle::Dummy(DummyResponseHandle::new(())),
