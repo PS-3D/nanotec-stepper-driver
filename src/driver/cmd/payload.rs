@@ -553,7 +553,7 @@ impl Display for DigitalOutputFunction {
 /// Binding for values of [1.5.36 Setting the ramp type](https://en.nanotec.com/fileadmin/files/Handbuecher/Programmierung/Programming_Manual_V2.7.pdf)
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, FromPrimitive)]
 pub enum RampType {
-    Trapizoidal,
+    Trapezoidal,
     Sinus,
     JerkFree,
 }
