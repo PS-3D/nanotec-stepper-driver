@@ -342,4 +342,21 @@ where
         Self: Sized;
 }
 
+// TODO docs
+pub trait Ignore<T> {
+    // TODO docs
+    fn ignore(self) -> Result<T, DriverError>;
+}
+
+impl<H, T, EF, ER> Ignore<T> for Result<T, ResponseError<H, T, EF, ER>>
+where
+    H: ResponseHandle<EF, ER, Ret = T>,
+    EF: Error + Into<DriverError>,
+    ER: Error + Into<DriverError>,
+{
+    fn ignore(self) -> Result<T, DriverError> {
+        self.map_err(DriverError::from)
+    }
+}
+
 // TODO impl ResponseHandle<T> for Box<dyn ResponseHandle<T>>?

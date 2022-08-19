@@ -50,7 +50,7 @@ pub use driver::{
         single::{Motor, NoSendAutoStatus, SendAutoStatus},
     },
     responsehandle::{
-        write::MotorMappingError, RecoverableResponseError, ResponseError, ResponseHandle,
+        write::MotorMappingError, Ignore, RecoverableResponseError, ResponseError, ResponseHandle,
     },
     Driver, DriverError,
 };
