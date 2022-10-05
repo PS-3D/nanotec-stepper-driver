@@ -320,6 +320,12 @@ impl<AS: AutoStatusMode> Motor<AS> {
         })
     }
 
+    /// Returns this motors address directly from memory. To actually ask the motor
+    /// what its address is, see [`get_drive_address`][Motor::get_drive_address]
+    pub fn address(&self) -> u8 {
+        self.address
+    }
+
     motor_common_functions! {Motor::write}
 
     pub fn get_motor_type(&mut self) -> DResult<impl ResponseHandle<Ret = MotorType>> {
@@ -346,6 +352,8 @@ impl<AS: AutoStatusMode> Motor<AS> {
         short_read!(self, map::STEP_MODE, StepMode::parse)
     }
 
+    /// This will actually send a message to the motor asking it what its address
+    /// is. For a faster and less-hassle version see [`address`][Motor::address]
     pub fn get_drive_address(&mut self) -> DResult<impl ResponseHandle<Ret = u8>> {
         short_read!(self, map::DRIVE_ADDRESS, parse_su8)
     }
