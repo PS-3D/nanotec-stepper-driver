@@ -33,6 +33,21 @@ macro_rules! motor_common_functions {
             $write(
                 self,
                 format_args!("{}={}", mnemonic, data),
+                format_args!("{}={}", mnemonic, data),
+            )
+        }
+
+        // for some reason some long commands only answer with "<cmd><value>"
+        // instead of "<cmd>=<value>" as one would expect
+        // so thats why we need this
+        fn long_write_no_eq<D: Display>(
+            &self,
+            mnemonic: &str,
+            data: D,
+        ) -> Result<WrapperResponseHandle, DriverError> {
+            $write(
+                self,
+                format_args!("{}={}", mnemonic, data),
                 format_args!("{}{}", mnemonic, data),
             )
         }
@@ -230,7 +245,7 @@ macro_rules! motor_common_functions {
             r: u32,
         ) -> DResult<impl ResponseHandle<Ret = ()>> {
             ensure!(r <= 3_000_000, DriverError::InvalidArgument);
-            self.long_write(map::QUICKSTOP_RAMP_NO_CONVERSION, r)
+            self.long_write_no_eq(map::QUICKSTOP_RAMP_NO_CONVERSION, r)
         }
 
         pub fn set_gearfactor_numerator(
@@ -322,7 +337,7 @@ macro_rules! motor_common_functions {
             n: u32,
         ) -> DResult<impl ResponseHandle<Ret = ()>> {
             ensure!(n >= 1 && n <= 3_000_000, DriverError::InvalidArgument);
-            self.long_write(map::ACCEL_RAMP_NO_CONVERSION, n)
+            self.long_write_no_eq(map::ACCEL_RAMP_NO_CONVERSION, n)
         }
 
         pub fn set_brake_ramp(&mut self, n: u16) -> DResult<impl ResponseHandle<Ret = ()>> {
@@ -334,7 +349,7 @@ macro_rules! motor_common_functions {
             n: u32,
         ) -> DResult<impl ResponseHandle<Ret = ()>> {
             ensure!(n <= 3_000_000, DriverError::InvalidArgument);
-            self.long_write(map::BRAKE_RAMP_NO_CONVERSION, n)
+            self.long_write_no_eq(map::BRAKE_RAMP_NO_CONVERSION, n)
         }
 
         pub fn set_rotation_direction(
